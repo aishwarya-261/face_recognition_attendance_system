@@ -12,6 +12,31 @@ import pickle
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+# Global Caches for Real-Time Performance
+_mtcnn = None
+_resnet = None
+_trained_data = None
+
+def get_models():
+    """Singleton to load and cache models for real-time performance."""
+    global _mtcnn, _resnet
+    if _mtcnn is None:
+        _mtcnn = MTCNN(keep_all=True, device=device)
+    if _resnet is None:
+        _resnet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
+    return _mtcnn, _resnet
+
+def get_trained_data():
+    """Singleton to load and cache trained face embeddings."""
+    global _trained_data
+    if _trained_data is None:
+        try:
+            with open("TrainingImageLabel/Trainer.pkl", 'rb') as f:
+                _trained_data = pickle.load(f)
+        except FileNotFoundError:
+            return None
+    return _trained_data
+
 def ensure_folders():
     """Utility to ensure all required data folders exist."""
     for f in ['TrainingImage', 'TrainingImageLabel', 'StudentDetails', 'Attendance']:
@@ -230,35 +255,37 @@ def train_images():
         
     return f"Model Trained Successfully. Processed {len(imagePaths)} images (including augmented variations)."
 
+from PIL import ImageDraw, ImageFont
+
 def recognize_face(image):
-    """Recognize a face from a single image (for web/gradio)."""
+    """Recognize a face from a single image and return an annotated image (Optimized)."""
     ensure_folders()
-    try:
-        with open("TrainingImageLabel/Trainer.pkl", 'rb') as f:
-            model_data = pickle.load(f)
-        saved_embeddings = model_data["embeddings"]
-        saved_ids = model_data["ids"]
-    except FileNotFoundError:
-        return "Error", "Model not found. Please train images first."
+    model_data = get_trained_data()
+    if model_data is None:
+        return "Error", "Model not found. Please train images first.", image
+        
+    saved_embeddings = model_data["embeddings"]
+    saved_ids = model_data["ids"]
         
     df_path = "StudentDetails/StudentDetails.csv"
     if not os.path.exists(df_path):
-        return "Error", "Student details not found."
+        return "Error", "Student details not found.", image
     df = pd.read_csv(df_path)
     df = df.dropna(subset=['Id'])
     df['Id'] = df['Id'].astype(int)
     
-    mtcnn = MTCNN(keep_all=True, device=device)
-    resnet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
+    # Use cached models
+    mtcnn, resnet = get_models()
     
-    # Convert image to RGB
+    # Generate annotated image
     img_rgb = image.convert('RGB')
+    draw = ImageDraw.Draw(img_rgb)
     boxes, probs = mtcnn.detect(img_rgb)
     
     if boxes is None:
-        return "No Face", "No face detected in the image."
+        return "No Face", "No face detected in the image.", img_rgb
         
-    results = []
+    results_list = []
     trans = transforms.Compose([
         transforms.Resize((160, 160)),
         transforms.ToTensor()
@@ -266,6 +293,9 @@ def recognize_face(image):
     
     for box in boxes:
         x1, y1, x2, y2 = [int(b) for b in box]
+        # Draw Blue Rectangle (Same as project screenshot)
+        draw.rectangle([x1, y1, x2, y2], outline="blue", width=5)
+        
         try:
             face_crop = img_rgb.crop((x1, y1, x2, y2))
             img_tensor = trans(face_crop).unsqueeze(0).to(device)
@@ -277,30 +307,49 @@ def recognize_face(image):
             min_dist_idx = np.argmin(dists)
             min_dist = dists[min_dist_idx]
             
-            if min_dist < 1.2:
+            if min_dist < 1.1:
                 Id = saved_ids[min_dist_idx]
                 name_row = df.loc[df['Id'] == Id]['Name'].values
                 name = name_row[0] if len(name_row) > 0 else "Unknown"
                 
-                # Mark Attendance
-                ts = time.time()
-                date = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
-                timeStamp = datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')
+                # Draw Green Text (Same as project screenshot)
+                display_text = f"{Id}-{name}"
+                draw.text((x1, y1 - 40), display_text, fill="lime")
                 
-                attendance_row = [Id, name, date, timeStamp]
-                fileName = "Attendance/Master_Attendance.csv"
-                if os.path.exists(fileName):
-                    pd.DataFrame([attendance_row]).to_csv(fileName, mode='a', header=False, index=False)
-                else:
-                    pd.DataFrame([attendance_row], columns=['Id', 'Name', 'Date', 'Time']).to_csv(fileName, mode='w', header=True, index=False)
-                    
-                results.append(f"{name} (ID: {Id})")
+                # Only log if requested or context suggests capture (in web logic we'll use a signal)
+                # For real-time, we might skip file writing here and do it in Streamlit callback
+                results_list.append(display_text)
             else:
-                results.append("Unknown")
-        except Exception as e:
+                draw.text((x1, y1 - 40), "Unknown", fill="red")
+        except Exception:
             continue
             
-    return "Recognized", ", ".join(results)
+def log_attendance(display_text):
+    """Safely log attendance to CSV (ID-Name format)."""
+    try:
+        parts = display_text.split("-")
+        if len(parts) < 2: return
+        Id = int(parts[0])
+        name = parts[1]
+        
+        ts = time.time()
+        date = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
+        timeStamp = datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')
+        
+        attendance_row = [Id, name, date, timeStamp]
+        ensure_folders()
+        fileName = "Attendance/Master_Attendance.csv"
+        
+        # Append to master log
+        df = pd.DataFrame([attendance_row], columns=['Id', 'Name', 'Date', 'Time'])
+        if os.path.exists(fileName):
+            df.to_csv(fileName, mode='a', header=False, index=False)
+        else:
+            df.to_csv(fileName, mode='w', header=True, index=False)
+        return True
+    except Exception as e:
+        print(f"Logging error: {e}")
+        return False
 
 def automatic_attendance():
     ensure_folders()

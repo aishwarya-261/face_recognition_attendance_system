@@ -6,3 +6,5 @@ facenet-pytorch
 scikit-learn
 gradio
 streamlit
+streamlit-webrtc
+av
