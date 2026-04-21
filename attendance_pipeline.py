@@ -254,12 +254,16 @@ def train_images():
             Id = int(filename.split('.')[1])
             
             img = Image.open(imagePath).convert('RGB')
+            img_tensor = trans(img).unsqueeze(0).to(device)
+            # 🌟 Standardize input for FaceNet
+            img_tensor = (img_tensor - 127.5) / 128.0
             
-            # Encode image and append to training arrays
-            img_tensor_orig = trans(img).unsqueeze(0).to(device)
             with torch.no_grad():
-                emb_orig = resnet(img_tensor_orig).cpu().numpy()[0]
-            embeddings.append(emb_orig)
+                emb = resnet(img_tensor).cpu().numpy()[0]
+                # 🌟 L2 Normalize to unit length for hyper-sphere comparison
+                emb = emb / (np.linalg.norm(emb) + 1e-6)
+                
+            embeddings.append(emb)
             ids.append(Id)
                 
         except Exception as e:
@@ -271,7 +275,7 @@ def train_images():
     with open("TrainingImageLabel/Trainer.pkl", 'wb') as f:
         pickle.dump(model_data, f)
         
-    return f"Model Trained Successfully. Processed {len(imagePaths)} images (including augmented variations)."
+    return f"Model Trained Successfully with High-Accuracy Logic ({len(imagePaths)} images)."
 
 from PIL import ImageDraw, ImageFont
 
@@ -311,35 +315,46 @@ def recognize_face(image):
     
     for box in boxes:
         x1, y1, x2, y2 = [int(b) for b in box]
-        # Draw Blue Rectangle (Same as project screenshot)
         draw.rectangle([x1, y1, x2, y2], outline="blue", width=5)
         
         try:
             face_crop = img_rgb.crop((x1, y1, x2, y2))
             img_tensor = trans(face_crop).unsqueeze(0).to(device)
+            # 🌟 Standardize the capture exactly like training
+            img_tensor = (img_tensor - 127.5) / 128.0
             
             with torch.no_grad():
                 emb = resnet(img_tensor).cpu().numpy()[0]
+                # 🌟 L2 Normalize for hyper-sphere compare
+                emb = emb / (np.linalg.norm(emb) + 1e-6)
             
-            dists = np.linalg.norm(saved_embeddings - emb, axis=1)
-            min_dist_idx = np.argmin(dists)
-            min_dist = dists[min_dist_idx]
+            # 🌟 GROUP-MEAN MATCHING: Calculate distance to each student cluster
+            best_id = -1
+            min_mean_dist = 2.0 # Unit vector dist range is [0, 2]
             
-            if min_dist < 1.1:
-                Id = saved_ids[min_dist_idx]
-                name_row = df.loc[df['Id'] == Id]['Name'].values
+            for uid in np.unique(saved_ids):
+                # Calculate the average distance to this student's 20 images
+                student_masks = (saved_ids == uid)
+                student_embs = saved_embeddings[student_masks]
+                dists = np.linalg.norm(student_embs - emb, axis=1)
+                mean_dist = np.mean(dists)
+                
+                if mean_dist < min_mean_dist:
+                    min_mean_dist = mean_dist
+                    best_id = uid
+            
+            # 🌟 TIGHT THRESHOLD: Standard 0.85 for FaceNet L2-Norm
+            if min_mean_dist < 0.85:
+                # Find Name
+                name_row = df.loc[df['Id'] == best_id]['Name'].values
                 name = name_row[0] if len(name_row) > 0 else "Unknown"
-                
-                # Draw Green Text (Same as project screenshot)
-                display_text = f"{Id}-{name}"
+                display_text = f"{best_id}-{name}"
                 draw.text((x1, y1 - 40), display_text, fill="lime")
-                
-                # Only log if requested or context suggests capture (in web logic we'll use a signal)
-                # For real-time, we might skip file writing here and do it in Streamlit callback
                 results_list.append(display_text)
             else:
                 draw.text((x1, y1 - 40), "Unknown", fill="red")
-        except Exception:
+        except Exception as e:
+            print(f"Recognition Logic Error: {e}")
             continue
             
     final_status = "Recognized" if results_list else "No Match"
