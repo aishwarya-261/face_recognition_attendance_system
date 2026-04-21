@@ -12,22 +12,15 @@ import pickle
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-def ensure_folders():
-    for f in ['TrainingImage', 'TrainingImageLabel', 'StudentDetails', 'Attendance']:
-        if not os.path.exists(f):
-            os.makedirs(f)
-
-def augment_image_dynamic(pil_img):
-    """Apply random transforms to a PIL image for dynamic data augmentation."""
-    augment_trans = transforms.Compose([
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomRotation(15),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2),
-        transforms.RandomAffine(degrees=0, scale=(0.8, 1.2)),
-        transforms.Resize((160, 160)),
-        transforms.ToTensor()
-    ])
-    return augment_trans(pil_img)
+def wipe_all_data():
+    """Wipes all student images, records, and attendance logs."""
+    import shutil
+    for folder in ['TrainingImage', 'TrainingImageLabel', 'StudentDetails', 'Attendance']:
+        if os.path.exists(folder):
+            shutil.rmtree(folder)
+    # Recreate empty folders
+    ensure_folders()
+    return "All data successfully cleared. You can start fresh now."
 
 def enroll_from_image(enrollment_id, name, image, sample_num):
     """Enroll a student using a single image (generates 20 augmented samples)."""
@@ -43,21 +36,18 @@ def enroll_from_image(enrollment_id, name, image, sample_num):
     # Convert PIL to RGB for augmentation
     pil_img = image.convert('RGB')
     
-    # Augmentation pipeline (Same as original capture logic)
+    # Augmentation pipeline: Flip, Zoom (scale), and Brightness (jitter)
     saving_trans = transforms.Compose([
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomRotation(15),
         transforms.ColorJitter(brightness=0.4, contrast=0.4),
-        transforms.RandomAffine(degrees=0, scale=(0.8, 1.2)),
+        transforms.RandomAffine(degrees=10, scale=(0.7, 1.3), translate=(0.1, 0.1)),
     ])
     
     # Generate and save 20 samples
     for i in range(1, 21):
         filename = f"TrainingImage/{name}.{enrollment_id}.{i}.jpg"
-        # Apply augmentation (except for the first one, which can be the clean original)
+        # Apply augmentation (except for the first one, which is the clean original)
         aug_img = saving_trans(pil_img) if i > 1 else pil_img
-        
-        # Save as BGR for OpenCV compatibility if needed, or just PIL save
         aug_img.save(filename)
         
     # Update CSV record
@@ -67,18 +57,18 @@ def enroll_from_image(enrollment_id, name, image, sample_num):
     else:
         df = pd.read_csv(df_path)
     
-    df['Id'] = df['Id'].astype(int)
+    df['Id'] = pd.to_numeric(df['Id'], errors='coerce')
     if enroll_id_int not in df['Id'].values:
         new_row = pd.DataFrame([[enroll_id_int, name]], columns=['Id', 'Name'])
         df = pd.concat([df, new_row], ignore_index=True)
         df.to_csv(df_path, index=False)
         
-    return f"Success: 20 augmented images for {name} (ID: {enrollment_id}) added and registered."
+    return f"Success: 20 augmented samples saved for {name}. Ready for training."
 
 def capture_images(enrollment_id, name):
+    # (Original desktop Capture code remains if needed for local use)
     ensure_folders()
-    
-    # Make enrollment_id an integer early
+    ...
     try:
         enroll_id_int = int(enrollment_id)
     except ValueError:

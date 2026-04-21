@@ -83,20 +83,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Keyboard Shortcut Handler (Simulate 'q' to close camera)
+# We use a more aggressive script to catch 'q' and click the close button
 components.html("""
 <script>
     const doc = window.parent.document;
     doc.addEventListener('keydown', function(e) {
         if (e.key === 'q' || e.key === 'Q') {
-            // Find the buttons that close the camera
+            // Find ALL buttons and click the one that says 'Close'
             const buttons = doc.querySelectorAll('button');
-            for (const btn of buttons) {
-                if (btn.innerText.includes('Close') || btn.innerText.includes('1.') || btn.innerText.includes('3.')) {
-                    // btn.click(); // Logic for closing via Q
+            buttons.forEach(function(btn) {
+                if (btn.innerText.includes('Close') || btn.innerText.includes('Q')) {
+                    btn.click();
                 }
-            }
-            // For Streamlit, we'll inform the user and use a state-based close
-            window.parent.postMessage({type: 'streamlit:set_component_value', key: 'q_pressed', value: true}, '*');
+            });
         }
     });
 </script>
@@ -123,7 +122,7 @@ with main_left:
         camera_photo = st.camera_input("Enrollment", label_visibility="collapsed")
         if camera_photo:
             img = Image.open(camera_photo)
-            with st.spinner("Processing..."):
+            with st.spinner("Processing 20 augmented samples..."):
                 res = attendance_pipeline.enroll_from_image(st.session_state.get('id_input',''), st.session_state.get('name_input',''), img, 1)
             st.success(res)
             st.session_state.show_enroll_cam = False
@@ -131,7 +130,7 @@ with main_left:
 
     elif st.session_state.show_attendance_cam:
         if st.session_state.last_recognized:
-            st.markdown(f'<div class="name-display">Recognized: {st.session_state.last_recognized}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="name-display" style="border-left-color: #10b981; color: #10b981; background-color: rgba(16, 185, 129, 0.1);">✅ Recognized: {st.session_state.last_recognized}</div>', unsafe_allow_html=True)
         
         st.info("💡 Marking Attendance (Press 'Q' to close)")
         attendance_camera = st.camera_input("Attendance", label_visibility="collapsed")
@@ -141,12 +140,9 @@ with main_left:
                 status, result = attendance_pipeline.recognize_face(img)
             if status == "Recognized":
                 st.session_state.last_recognized = result
-                st.success(f"Successfully marked: {result}")
+                st.toast(f"Attendance marked for {result}!", icon="✅")
             else:
                 st.error(f"{status}: {result}")
-            # Keep camera open for more recognition or close? User said close after 'q'.
-            # st.session_state.show_attendance_cam = False 
-            # st.rerun()
     else:
         st.markdown("<div style='height: 300px; border: 2px dashed #374151; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #4b5563;'>Camera is Closed. Click a button to open.</div>", unsafe_allow_html=True)
 
@@ -170,12 +166,14 @@ with main_right:
 
     # Buttons Container
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("1. Take Images", use_container_width=True, type="primary"):
-        if not enroll_id or not student_name:
-            st.error("Please enter ID and Name on the right first!")
-        else:
-            st.session_state.show_enroll_cam = True
-            st.session_state.show_attendance_cam = False
+    btn_row1, btn_row2 = st.columns([2, 1])
+    with btn_row1:
+        if st.button("1. Take Images", use_container_width=True, type="primary"):
+            if not enroll_id or not student_name:
+                st.error("Please enter ID and Name on the right first!")
+            else:
+                st.session_state.show_enroll_cam = True
+                st.session_state.show_attendance_cam = False
 
     if st.button("2. Train Model", use_container_width=True, type="primary"):
         st.session_state.show_enroll_cam = False
@@ -195,16 +193,37 @@ with main_right:
             st.session_state.show_attendance_cam = False
             st.rerun()
 
+    # Recent Attendance Log
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("🕒 Recent Attendance")
+    attendance_file = "Attendance/Master_Attendance.csv"
+    if os.path.exists(attendance_file):
+        import pandas as pd
+        df = pd.read_csv(attendance_file)
+        if not df.empty:
+            st.dataframe(df.tail(5).iloc[::-1], use_container_width=True) # Show last 5
+        else:
+            st.info("Log is empty.")
+    else:
+        st.info("Log not found.")
+
 st.divider()
 
 # Discreet Admin Dashboard at the bottom
 with st.expander("🔓 Admin Access (Host Only)"):
     admin_password = st.text_input("Enter Password", type="password")
     
-    # You can change 'aishwarya123' to any password you want
     if admin_password == "aishwarya123":
         st.success("Access Granted")
         
+        # New Danger Zone
+        st.warning("⚠️ Danger Zone")
+        if st.checkbox("Enable Wipe Button"):
+            if st.button("🗑️ Clear All System Data (Permanent)", type="secondary"):
+                res = attendance_pipeline.wipe_all_data()
+                st.success(res)
+                st.rerun()
+
         tab_logs, tab_imgs = st.tabs(["📊 Attendance Logs", "🖼️ Student Gallery"])
         
         with tab_logs:
