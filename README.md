@@ -3,7 +3,7 @@ title: Face Recognition Attendance System
 emoji: 🎓
 colorFrom: indigo
 colorTo: gray
-sdk: gradio
+sdk: docker
 app_file: app.py
 pinned: false
 ---
