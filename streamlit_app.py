@@ -193,20 +193,6 @@ with main_right:
             st.session_state.show_attendance_cam = False
             st.rerun()
 
-    # Recent Attendance Log
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("🕒 Recent Attendance")
-    attendance_file = "Attendance/Master_Attendance.csv"
-    if os.path.exists(attendance_file):
-        import pandas as pd
-        df = pd.read_csv(attendance_file)
-        if not df.empty:
-            st.dataframe(df.tail(5).iloc[::-1], use_container_width=True) # Show last 5
-        else:
-            st.info("Log is empty.")
-    else:
-        st.info("Log not found.")
-
 st.divider()
 
 # Discreet Admin Dashboard at the bottom

@@ -12,9 +12,16 @@ import pickle
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+def ensure_folders():
+    """Utility to ensure all required data folders exist."""
+    for f in ['TrainingImage', 'TrainingImageLabel', 'StudentDetails', 'Attendance']:
+        if not os.path.exists(f):
+            os.makedirs(f)
+
 def wipe_all_data():
     """Wipes all student images, records, and attendance logs."""
     import shutil
+    ensure_folders() # Ensure they exist before trying to delete just in case
     for folder in ['TrainingImage', 'TrainingImageLabel', 'StudentDetails', 'Attendance']:
         if os.path.exists(folder):
             shutil.rmtree(folder)
