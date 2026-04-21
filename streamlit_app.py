@@ -101,37 +101,6 @@ components.html("""
 </script>
 """, height=0)
 
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, RTCConfiguration
-import av
-import numpy as np
-import time
-
-RTC_CONFIG = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
-
-class FaceRecognitionTransformer(VideoTransformerBase):
-    def __init__(self):
-        self.last_mark_time = 0
-
-    def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        # Convert BGR (OpenCV) to PIL RGB
-        pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-        
-        status, result_text, annotated_img = attendance_pipeline.recognize_face(pil_img)
-        
-        # De-bounced Logging (Every 5 seconds)
-        if "Recognized" in status and result_text != "Unknown":
-            current_time = time.time()
-            if current_time - self.last_mark_time > 5:
-                # Log the first recognized person in this frame
-                first_person = result_text.split(",")[0].strip()
-                attendance_pipeline.log_attendance(first_person)
-                self.last_mark_time = current_time
-        
-        # Convert back to BGR for display
-        res_img = cv2.cvtColor(np.array(annotated_img), cv2.COLOR_RGB2BGR)
-        return res_img
-
 # Initialize Session State
 if 'show_enroll_cam' not in st.session_state:
     st.session_state.show_enroll_cam = False
@@ -139,6 +108,8 @@ if 'show_attendance_cam' not in st.session_state:
     st.session_state.show_attendance_cam = False
 if 'last_recognized' not in st.session_state:
     st.session_state.last_recognized = ""
+if 'marked_img' not in st.session_state:
+    st.session_state.marked_img = None
 
 # Title
 st.markdown('<h1 class="main-title">Face Recognition Attendance System</h1>', unsafe_allow_html=True)
@@ -150,7 +121,7 @@ with main_left:
     st.markdown("### 📷 Camera View")
     
     if st.session_state.show_enroll_cam:
-        st.info("💡 Capture Face for Enrollment (Static Capture)")
+        st.info("💡 Capture Face for Enrollment (Static)")
         camera_photo = st.camera_input("Enrollment", label_visibility="collapsed")
         if camera_photo:
             img = Image.open(camera_photo)
@@ -161,21 +132,37 @@ with main_left:
             st.rerun()
 
     elif st.session_state.show_attendance_cam:
-        st.markdown('<div class="name-display" style="border-left-color: #3b82f6; background-color: rgba(59, 130, 246, 0.1);">📡 Live Scanning for Faces...</div>', unsafe_allow_html=True)
+        # 🌟 BACK TO STABLE CAMERA
+        st.info("💡 Look at the camera and click 'Take Photo' to log attendance.")
+        attendance_camera = st.camera_input("Attendance", label_visibility="collapsed")
         
-        # Real-time WebRTC Streamer (Desktop Style)
-        webrtc_ctx = webrtc_streamer(
-            key="id-name-overlay",
-            video_transformer_factory=FaceRecognitionTransformer,
-            rtc_configuration=RTC_CONFIG,
-            video_html_attrs={"style": {"width": "100%", "margin": "0 auto", "border": "2px solid #10b981", "border-radius": "10px"},"controls": False,"autoPlay": True,},
-        )
+        if attendance_camera:
+            img = Image.open(attendance_camera)
+            with st.spinner("Recognizing..."):
+                # Use optimized recognize_face (returns Status, NameText, AnnotatedImg)
+                status, result, annotated = attendance_pipeline.recognize_face(img)
+                
+            if status == "Recognized":
+                st.session_state.last_recognized = result
+                st.session_state.marked_img = annotated
+                # Log attendance
+                first_person = result.split(",")[0].strip()
+                attendance_pipeline.log_attendance(first_person)
+                st.toast(f"Attendance marked for {result}!", icon="✅")
+            else:
+                st.session_state.marked_img = annotated
+                st.error(f"{status}: {result}")
         
-        if webrtc_ctx.video_transformer:
-            st.info("💡 Stand still for 2 seconds when the green box appears to log attendance.")
+        # Display the result with BOXES and GREEN NAMES
+        if st.session_state.marked_img is not None:
+            st.subheader("Last Recognition Result:")
+            st.image(st.session_state.marked_img, use_container_width=True)
+            if st.button("Clear Result & Try Again"):
+                st.session_state.marked_img = None
+                st.rerun()
             
     else:
-        st.markdown("<div style='height: 300px; border: 2px dashed #374151; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #4b5563;'>Camera is Closed. Click 'Automatic Attendance' to start live scanning.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='height: 300px; border: 2px dashed #374151; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #4b5563;'>Camera is Closed. Click 'Automatic Attendance' to open.</div>", unsafe_allow_html=True)
 
 with main_right:
     # Enrollment Frame
