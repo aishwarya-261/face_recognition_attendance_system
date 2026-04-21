@@ -5,3 +5,4 @@ pillow
 facenet-pytorch
 scikit-learn
 gradio
+streamlit
