@@ -78,6 +78,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Initialize Session State for Camera Toggles
+if 'show_enroll_cam' not in st.session_state:
+    st.session_state.show_enroll_cam = False
+if 'show_attendance_cam' not in st.session_state:
+    st.session_state.show_attendance_cam = False
+
 # Title
 st.markdown('<h1 class="main-title">Face Recognition Attendance System</h1>', unsafe_allow_html=True)
 
@@ -86,59 +92,76 @@ with st.container():
     # Enrollment "Frame" (Like the card in screenshot)
     st.markdown('<div class="enroll-frame">', unsafe_allow_html=True)
     
-    col_label, col_input = st.columns([1, 2])
-    with col_label:
-        st.markdown("<br><p style='margin-top:10px;'>Enrollment ID:</p>", unsafe_allow_html=True)
-        st.markdown("<br><p style='margin-top:15px;'>Student Name:</p>", unsafe_allow_html=True)
-        
-    with col_input:
+    col_label_id, col_input_id = st.columns([1, 3])
+    with col_label_id:
+        st.markdown("<p style='margin-top:10px;'>Enrollment ID:</p>", unsafe_allow_html=True)
+    with col_input_id:
         enroll_id = st.text_input("", label_visibility="collapsed", key="id_input", placeholder="Enter ID")
+
+    col_label_name, col_input_name = st.columns([1, 3])
+    with col_label_name:
+        st.markdown("<p style='margin-top:10px;'>Student Name:</p>", unsafe_allow_html=True)
+    with col_input_name:
         student_name = st.text_input("", label_visibility="collapsed", key="name_input", placeholder="Enter Name")
         
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Status/Output Message Area
-    status_container = st.empty()
+    status_container = st.container()
 
     # Buttons Row (Mimicking the screenshot layout)
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     
     with btn_col1:
         # Step 1: Capture
-        camera_photo = st.camera_input("1. Take Images", label_visibility="collapsed")
         if st.button("1. Take Images", use_container_width=True, type="primary"):
-            if not enroll_id or not student_name:
-                status_container.error("Please enter both ID and Name first.")
-            elif camera_photo is None:
-                status_container.warning("Please capture a photo using the camera above.")
-            else:
-                image = Image.open(camera_photo)
-                with st.spinner("Processing 20 augmented samples..."):
-                    res = attendance_pipeline.enroll_from_image(enroll_id, student_name, image, 1)
-                status_container.success(res)
+            st.session_state.show_enroll_cam = not st.session_state.show_enroll_cam
+            st.session_state.show_attendance_cam = False
+        
+        if st.session_state.show_enroll_cam:
+            camera_photo = st.camera_input("Capture Face for Enrollment", label_visibility="collapsed")
+            if camera_photo:
+                if not enroll_id or not student_name:
+                    st.error("Please enter both ID and Name first.")
+                else:
+                    image = Image.open(camera_photo)
+                    with st.spinner("Processing 20 augmented samples..."):
+                        res = attendance_pipeline.enroll_from_image(enroll_id, student_name, image, 1)
+                    st.success(res)
+                    st.session_state.show_enroll_cam = False # Close camera after success
+                    st.rerun()
 
     with btn_col2:
         # Step 2: Train
         if st.button("2. Train Model", use_container_width=True, type="primary"):
+            st.session_state.show_enroll_cam = False
+            st.session_state.show_attendance_cam = False
             with st.spinner("Training..."):
                 res = attendance_pipeline.train_images()
-            status_container.success(res)
+            st.success(res)
 
     with btn_col3:
         # Step 3: Attendance
-        attendance_camera = st.camera_input("3. Automatic Attendance", label_visibility="collapsed")
         if st.button("3. Automatic Attendance", use_container_width=True):
-            if attendance_camera is None:
-                status_container.warning("Capture face for attendance.")
-            else:
+            st.session_state.show_attendance_cam = not st.session_state.show_attendance_cam
+            st.session_state.show_enroll_cam = False
+            
+        if st.session_state.show_attendance_cam:
+            attendance_camera = st.camera_input("Capture Face for Attendance", label_visibility="collapsed")
+            if attendance_camera:
                 image = Image.open(attendance_camera)
                 with st.spinner("Recognizing..."):
                     status, result = attendance_pipeline.recognize_face(image)
                 if status == "Recognized":
-                    status_container.success(f"Marked: {result}")
+                    st.success(f"Marked: {result}")
                 else:
-                    status_container.error(f"{status}: {result}")
+                    st.error(f"{status}: {result}")
+                st.session_state.show_attendance_cam = False # Close camera after success
+                st.rerun()
+
+st.markdown("<br><br>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; color:#4b5563;'>Original logic maintained (20-image augmentation).</p>", unsafe_allow_html=True)
 
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("<p style='text-align:center; color:#4b5563;'>Original logic maintained (20-image augmentation).</p>", unsafe_allow_html=True)
