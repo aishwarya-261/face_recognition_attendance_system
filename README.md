@@ -1,3 +1,13 @@
+---
+title: Face Recognition Attendance System
+emoji: 🎓
+colorFrom: indigo
+colorTo: slate
+sdk: gradio
+app_file: app.py
+pinned: false
+---
+
 # 🎓 Face Recognition Attendance System
 
 A robust, deep-learning-based attendance system using **MTCNN** for face detection and **FaceNet (InceptionResnetV1)** for face recognition. This project features both a local Tkinter GUI and a web-based Gradio interface for easy deployment on Hugging Face Spaces.
