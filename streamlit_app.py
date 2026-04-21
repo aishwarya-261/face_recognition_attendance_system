@@ -100,16 +100,21 @@ components.html("""
     });
 </script>
 <script>
-    const observer = new MutationObserver((mutations) => {
-        const buttons = document.querySelectorAll('[data-testid="stCameraInputButton"]');
-        buttons.forEach(btn => {
-            if (btn.innerText.includes("Take Photo")) {
-                btn.style.color = "transparent";
-            }
-        });
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+    // No-op script to keep the structure, but removing the hide logic
 </script>
+<style>
+    /* Ensure camera button text is ALWAYS visible and styled */
+    [data-testid="stCameraInputButton"] {
+        color: white !important;
+        background-color: #10b981 !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+    }
+    [data-testid="stCameraInputButton"]:hover {
+        background-color: #059669 !important;
+        cursor: pointer;
+    }
+</style>
 """, height=0)
 
 # Initialize Session State
