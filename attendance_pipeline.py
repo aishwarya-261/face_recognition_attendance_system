@@ -324,6 +324,9 @@ def recognize_face(image):
         except Exception:
             continue
             
+    final_status = "Recognized" if results_list else "No Match"
+    return final_status, ", ".join(results_list), img_rgb
+
 def log_attendance(display_text):
     """Safely log attendance to CSV (ID-Name format)."""
     try:
