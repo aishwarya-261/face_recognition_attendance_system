@@ -99,6 +99,17 @@ components.html("""
         }
     });
 </script>
+<script>
+    const observer = new MutationObserver((mutations) => {
+        const buttons = document.querySelectorAll('[data-testid="stCameraInputButton"]');
+        buttons.forEach(btn => {
+            if (btn.innerText.includes("Take Photo")) {
+                btn.style.color = "transparent";
+            }
+        });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+</script>
 """, height=0)
 
 # Initialize Session State

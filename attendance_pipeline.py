@@ -335,9 +335,10 @@ def log_attendance(display_text):
         Id = int(parts[0])
         name = parts[1]
         
-        ts = time.time()
-        date = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
-        timeStamp = datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')
+        # Correct timing to IST (GMT+5:30)
+        ist_now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
+        date = ist_now.strftime('%Y-%m-%d')
+        timeStamp = ist_now.strftime('%H:%M:%S')
         
         attendance_row = [Id, name, date, timeStamp]
         ensure_folders()
