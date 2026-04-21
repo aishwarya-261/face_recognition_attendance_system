@@ -103,34 +103,45 @@ components.html("""
     // No-op script to keep the structure, but removing the hide logic
 </script>
 <style>
-    /* Styling Take Photo button to match Image 1 (White bg, Red text, Red border) */
-    [data-testid="stCameraInputButton"] {
+    /* 🔴 AGGRESSIVE STYLE: Fix Take Photo button (Image 1 style) */
+    [data-testid="stCameraInputButton"], 
+    [data-testid="stCameraInputButton"] button,
+    [data-testid="stCameraInputButton"] span {
         background-color: white !important;
-        color: #ef4444 !important; /* Red-500 */
+        color: #ef4444 !important; /* Red Text */
         border: 2px solid #ef4444 !important;
         border-radius: 5px !important;
-        font-weight: 700 !important;
+        font-weight: 800 !important;
         opacity: 1 !important;
         visibility: visible !important;
-        height: 50px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
-    [data-testid="stCameraInputButton"]:hover {
-        background-color: #fee2e2 !important; /* Very light red */
-        cursor: pointer;
+    [data-testid="stCameraInputButton"] button:hover {
+        background-color: #fee2e2 !important; /* Light Hover */
+        color: #b91c1c !important; /* Darker Red on hover */
     }
 </style>
 <script>
-    // System recovery: Ensuring the Red/White style is enforced
-    const observer = new MutationObserver(() => {
-        const btns = document.querySelectorAll('[data-testid="stCameraInputButton"]');
+    // 🛡️ RECOVERY SCRIPT: Force red text if Streamlit tries to hide it
+    function forceButtonStyle() {
+        const btns = document.querySelectorAll('[data-testid="stCameraInputButton"] button');
         btns.forEach(btn => {
             btn.style.backgroundColor = "white";
             btn.style.color = "#ef4444";
             btn.style.border = "2px solid #ef4444";
             btn.style.fontWeight = "bold";
+            const spans = btn.querySelectorAll('span');
+            spans.forEach(span => {
+                span.style.color = "#ef4444";
+                span.style.visibility = "visible";
+            });
         });
-    });
+    }
+    const observer = new MutationObserver(forceButtonStyle);
     observer.observe(document.body, { childList: true, subtree: true });
+    setInterval(forceButtonStyle, 1000); // Constant check
 </script>
 """, height=0)
 
