@@ -117,22 +117,41 @@ main_left, main_right = st.columns([1.5, 2], gap="large")
 
 with main_left:
     st.markdown("### 📷 Camera View")
+    
+    # 🌟 NEW: Unmissable Recognition Display (HUGE GREEN BOX)
+    if st.session_state.show_attendance_cam:
+        if st.session_state.last_recognized:
+            st.markdown(f"""
+                <div style="
+                    background-color: #10b981; 
+                    color: white; 
+                    padding: 20px; 
+                    border-radius: 10px; 
+                    text-align: center; 
+                    font-size: 32px; 
+                    font-weight: 900; 
+                    margin-bottom: 20px;
+                    border: 4px solid #059669;
+                    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+                ">
+                    ID-NAME: {st.session_state.last_recognized}
+                </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("💡 Scanning for faces... (Press 'Q' to close)")
+    
     if st.session_state.show_enroll_cam:
         st.info("💡 Capture Face for Enrollment (Press 'Q' to cancel)")
         camera_photo = st.camera_input("Enrollment", label_visibility="collapsed")
         if camera_photo:
             img = Image.open(camera_photo)
-            with st.spinner("Processing 20 augmented samples..."):
+            with st.spinner("Saving exactly 20 augmented samples..."):
                 res = attendance_pipeline.enroll_from_image(st.session_state.get('id_input',''), st.session_state.get('name_input',''), img, 1)
             st.success(res)
             st.session_state.show_enroll_cam = False
             st.rerun()
 
     elif st.session_state.show_attendance_cam:
-        if st.session_state.last_recognized:
-            st.markdown(f'<div class="name-display" style="border-left-color: #10b981; color: #10b981; background-color: rgba(16, 185, 129, 0.1);">✅ Recognized: {st.session_state.last_recognized}</div>', unsafe_allow_html=True)
-        
-        st.info("💡 Marking Attendance (Press 'Q' to close)")
         attendance_camera = st.camera_input("Attendance", label_visibility="collapsed")
         if attendance_camera:
             img = Image.open(attendance_camera)
@@ -166,14 +185,12 @@ with main_right:
 
     # Buttons Container
     st.markdown("<br>", unsafe_allow_html=True)
-    btn_row1, btn_row2 = st.columns([2, 1])
-    with btn_row1:
-        if st.button("1. Take Images", use_container_width=True, type="primary"):
-            if not enroll_id or not student_name:
-                st.error("Please enter ID and Name on the right first!")
-            else:
-                st.session_state.show_enroll_cam = True
-                st.session_state.show_attendance_cam = False
+    if st.button("1. Take Images", use_container_width=True, type="primary"):
+        if not enroll_id or not student_name:
+            st.error("Please enter ID and Name on the right first!")
+        else:
+            st.session_state.show_enroll_cam = True
+            st.session_state.show_attendance_cam = False
 
     if st.button("2. Train Model", use_container_width=True, type="primary"):
         st.session_state.show_enroll_cam = False
@@ -191,6 +208,7 @@ with main_right:
         if st.button("❌ Close Camera (Press Q)", use_container_width=True):
             st.session_state.show_enroll_cam = False
             st.session_state.show_attendance_cam = False
+            st.session_state.last_recognized = ""
             st.rerun()
 
 st.divider()
@@ -218,10 +236,12 @@ with st.expander("🔓 Admin Access (Host Only)"):
             if os.path.exists(attendance_file):
                 import pandas as pd
                 df = pd.read_csv(attendance_file)
-                st.dataframe(df, use_container_width=True)
+                # 🌟 NEW: Sort descending (newest at top)
+                df_sorted = df.iloc[::-1].reset_index(drop=True)
+                st.dataframe(df_sorted, use_container_width=True)
                 
                 # Download button
-                csv = df.to_csv(index=False).encode('utf-8')
+                csv = df_sorted.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📥 Download Master Attendance CSV",
                     data=csv,
@@ -235,9 +255,10 @@ with st.expander("🔓 Admin Access (Host Only)"):
             st.subheader("Enrolled Student Images")
             img_path = "TrainingImage"
             if os.path.exists(img_path):
-                images = [f for f in os.listdir(img_path) if f.endswith(('.jpg', '.png'))]
+                # 🌟 IMPROVED: Scans All 20 images
+                images = sorted([f for f in os.listdir(img_path) if f.endswith(('.jpg', '.png'))])
                 if images:
-                    st.write(f"Total Images: {len(images)}")
+                    st.write(f"Total Images in System: {len(images)}")
                     cols = st.columns(4)
                     for idx, img_name in enumerate(images):
                         with cols[idx % 4]:

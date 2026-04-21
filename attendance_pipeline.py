@@ -30,15 +30,15 @@ def wipe_all_data():
     return "All data successfully cleared. You can start fresh now."
 
 def enroll_from_image(enrollment_id, name, image, sample_num):
-    """Enroll a student using a single image (generates 20 augmented samples)."""
+    """Enroll a student using a single image (generates exactly 20 augmented samples)."""
     ensure_folders()
     try:
         enroll_id_int = int(enrollment_id)
-    except ValueError:
+    except Exception:
         return "Error: Enrollment ID must be numeric."
         
-    if not name.replace(" ", "").isalpha():
-        return "Error: Name must be alphabetical."
+    if not name.strip():
+        return "Error: Name cannot be empty."
         
     # Convert PIL to RGB for augmentation
     pil_img = image.convert('RGB')
@@ -46,16 +46,22 @@ def enroll_from_image(enrollment_id, name, image, sample_num):
     # Augmentation pipeline: Flip, Zoom (scale), and Brightness (jitter)
     saving_trans = transforms.Compose([
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.ColorJitter(brightness=0.4, contrast=0.4),
-        transforms.RandomAffine(degrees=10, scale=(0.7, 1.3), translate=(0.1, 0.1)),
+        transforms.ColorJitter(brightness=0.5, contrast=0.5),
+        transforms.RandomAffine(degrees=15, scale=(0.7, 1.3), translate=(0.1, 0.1)),
     ])
     
-    # Generate and save 20 samples
+    saved_count = 0
+    # Generate and save exactly 20 samples
     for i in range(1, 21):
-        filename = f"TrainingImage/{name}.{enrollment_id}.{i}.jpg"
-        # Apply augmentation (except for the first one, which is the clean original)
-        aug_img = saving_trans(pil_img) if i > 1 else pil_img
-        aug_img.save(filename)
+        try:
+            filename = f"TrainingImage/{name}.{enrollment_id}.{i}.jpg"
+            # Apply augmentation (except for the first one, which is the clean original)
+            aug_img = saving_trans(pil_img) if i > 1 else pil_img
+            aug_img.save(filename, "JPEG", quality=95)
+            saved_count += 1
+        except Exception as e:
+            print(f"Failed to save sample {i}: {e}")
+            continue
         
     # Update CSV record
     df_path = "StudentDetails/StudentDetails.csv"
@@ -70,7 +76,7 @@ def enroll_from_image(enrollment_id, name, image, sample_num):
         df = pd.concat([df, new_row], ignore_index=True)
         df.to_csv(df_path, index=False)
         
-    return f"Success: 20 augmented samples saved for {name}. Ready for training."
+    return f"Success: {saved_count} augmented samples (Flip/Zoom/Brightness) added for {name}. Ready for training."
 
 def capture_images(enrollment_id, name):
     # (Original desktop Capture code remains if needed for local use)
