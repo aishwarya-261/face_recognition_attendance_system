@@ -11,7 +11,7 @@ st.markdown("Register students, train the AI model, and mark attendance securely
 
 # Sidebar for navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["1. Enroll Student", "2. Train Model", "3. Mark Attendance"])
+page = st.sidebar.radio("Go to", ["1. Enroll Student", "2. Train Model", "3. Mark Attendance", "4. View Data & Logs"])
 
 if page == "1. Enroll Student":
     st.header("Step 1: Enroll a New Student")
@@ -71,6 +71,46 @@ elif page == "3. Mark Attendance":
                     st.warning("No face detected in the photo.")
                 else:
                     st.error(f"Recognition Status: {status} - {result}")
+
+elif page == "4. View Data & Logs":
+    st.header("Step 4: View Enrolled Students and Attendance Logs")
+    
+    tab1, tab2 = st.tabs(["📊 Attendance Logs", "🖼️ Student Gallery"])
+    
+    with tab1:
+        st.subheader("Attendance Records")
+        attendance_file = "Attendance/Master_Attendance.csv"
+        if os.path.exists(attendance_file):
+            import pandas as pd
+            df = pd.read_csv(attendance_file)
+            st.dataframe(df, use_container_width=True)
+            
+            # Download button
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Attendance CSV",
+                data=csv,
+                file_name='attendance_report.csv',
+                mime='text/csv',
+            )
+        else:
+            st.info("No attendance records found yet.")
+
+    with tab2:
+        st.subheader("Captured Training Images")
+        img_path = "TrainingImage"
+        if os.path.exists(img_path):
+            images = [f for f in os.listdir(img_path) if f.endswith(('.jpg', '.png'))]
+            if images:
+                cols = st.columns(4)
+                for idx, img_name in enumerate(images):
+                    with cols[idx % 4]:
+                        img = Image.open(os.path.join(img_path, img_name))
+                        st.image(img, caption=img_name, use_container_width=True)
+            else:
+                st.info("No training images found yet.")
+        else:
+            st.info("Training folder not found.")
 
 st.divider()
 st.caption("Built with PyTorch, FaceNet, and Streamlit. Designed for stable cloud deployment.")
