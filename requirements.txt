@@ -1,9 +1,7 @@
-opencv-python
+opencv-python-headless
 pandas
 numpy
 pillow
-torch
-torchvision
 facenet-pytorch
 scikit-learn
 gradio
