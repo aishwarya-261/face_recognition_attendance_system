@@ -1,6 +1,8 @@
 opencv-python-headless
 pandas
 numpy
+torch
+torchvision
 pillow
 facenet-pytorch
 scikit-learn
