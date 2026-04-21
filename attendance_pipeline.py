@@ -335,14 +335,27 @@ def recognize_face(image):
                 # L2 Normalize
                 emb = emb / (np.linalg.norm(emb) + 1e-6)
             
-            # 🌟 NEAREST-NEIGHBOR: Find the single best match (Best for angle variance)
+            # 🌟 HIGH-PRECISION VOTING: Find Top-3 neighbors (Majority Vote)
             dists = np.linalg.norm(saved_embeddings - emb, axis=1)
-            min_dist_idx = np.argmin(dists)
-            min_dist = dists[min_dist_idx]
+            # Find indices of the 3 smallest distances
+            top3_indices = np.argsort(dists)[:3]
+            top3_ids = saved_ids[top3_indices]
+            top3_dists = dists[top3_indices]
             
-            # 🌟 CALIBRATED THRESHOLD: 1.0 is the Goldilocks zone for L2-Norm FaceNet
-            if min_dist < 1.0:
-                best_id = saved_ids[min_dist_idx]
+            # Count occurrences in Top-3
+            from collections import Counter
+            counts = Counter(top3_ids)
+            best_id, vote_count = counts.most_common(1)[0]
+            
+            # Calculate the average distance of the winners
+            winner_dists = [top3_dists[i] for i, v in enumerate(top3_ids) if v == best_id]
+            avg_winner_dist = np.mean(winner_dists)
+            
+            # 🌟 TRI-CRITERIA MATCH: 
+            # 1. Majority vote (at least 2/3)
+            # 2. Winning average distance < 0.92
+            # 3. Best overall distance < 1.0 (failsafe)
+            if vote_count >= 2 and avg_winner_dist < 0.92:
                 name_row = df.loc[df['Id'] == best_id]['Name'].values
                 name = name_row[0] if len(name_row) > 0 else "Unknown"
                 display_text = f"{best_id}-{name}"

@@ -123,7 +123,7 @@ components.html("""
     }
 </style>
 <script>
-    // 📸 DUAL ACTION: Press Q to Capture then Close
+    // 📸 FAST DUAL ACTION: Press Q to Capture then Close (200ms)
     document.addEventListener('keydown', function(event) {
         if (event.key === 'q' || event.key === 'Q') {
             const buttons = window.parent.document.querySelectorAll('button');
@@ -137,8 +137,8 @@ components.html("""
             
             if (captureBtn) {
                 captureBtn.click();
-                // Delay closing slightly to ensure capture completes
-                setTimeout(() => { if (closeBtn) closeBtn.click(); }, 800);
+                // Optimized fast delay for snappier performance
+                setTimeout(() => { if (closeBtn) closeBtn.click(); }, 200);
             } else if (closeBtn) {
                 closeBtn.click();
             }
