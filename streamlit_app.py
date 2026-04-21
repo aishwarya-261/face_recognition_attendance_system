@@ -123,6 +123,29 @@ components.html("""
     }
 </style>
 <script>
+    // 📸 DUAL ACTION: Press Q to Capture then Close
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'q' || event.key === 'Q') {
+            const buttons = window.parent.document.querySelectorAll('button');
+            let captureBtn = null;
+            let closeBtn = null;
+            
+            for (let btn of buttons) {
+                if (btn.innerText.includes("Take Photo")) captureBtn = btn;
+                if (btn.innerText.includes("Close Camera") || btn.innerText.includes("❌")) closeBtn = btn;
+            }
+            
+            if (captureBtn) {
+                captureBtn.click();
+                // Delay closing slightly to ensure capture completes
+                setTimeout(() => { if (closeBtn) closeBtn.click(); }, 800);
+            } else if (closeBtn) {
+                closeBtn.click();
+            }
+        }
+    });
+</script>
+<script>
     // System recovery: Continually ensuring the button text is red
     function fixCameraButton() {
         const cameraButtons = document.querySelectorAll('div[data-testid="stCameraInput"] button');
@@ -298,9 +321,9 @@ with st.expander("🔓 Admin Access (Host Only)"):
                 images = sorted([f for f in os.listdir(img_path) if f.endswith(('.jpg', '.png'))])
                 if images:
                     st.write(f"Total Images in System: {len(images)}")
-                    cols = st.columns(4)
+                    cols = st.columns(8)
                     for idx, img_name in enumerate(images):
-                        with cols[idx % 4]:
+                        with cols[idx % 8]:
                             img = Image.open(os.path.join(img_path, img_name))
                             st.image(img, caption=img_name, use_container_width=True)
                 else:
