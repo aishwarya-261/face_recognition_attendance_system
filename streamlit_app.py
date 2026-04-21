@@ -3,114 +3,142 @@ import attendance_pipeline
 from PIL import Image
 import os
 
-# Page Config
-st.set_page_config(page_title="Face Recognition Attendance", page_icon="🎓", layout="wide")
+# Page Config - Hide sidebar and set theme
+st.set_page_config(page_title="Face Recognition Attendance", page_icon="🎓", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("🎓 Face Recognition Attendance System")
-st.markdown("Register students, train the AI model, and mark attendance securely.")
-
-# Sidebar for navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["1. Enroll Student", "2. Train Model", "3. Mark Attendance", "4. View Data & Logs"])
-
-if page == "1. Enroll Student":
-    st.header("Step 1: Enroll a New Student")
-    col1, col2 = st.columns(2)
+# Custom CSS to match the original Tkinter UI
+st.markdown("""
+    <style>
+    /* Dark Background */
+    .stApp {
+        background-color: #111827;
+        color: white;
+    }
     
-    with col1:
-        enroll_id = st.text_input("Enrollment ID", placeholder="e.g. 101")
-        student_name = st.text_input("Student Name", placeholder="e.g. John Doe")
-        camera_photo = st.camera_input("Capture Face for Enrollment")
+    /* Main Title */
+    .main-title {
+        text-align: center;
+        font-family: 'Helvetica Neue', sans-serif;
+        font-weight: 700;
+        font-size: 40px;
+        margin-top: 20px;
+        margin-bottom: 40px;
+    }
+    
+    /* Enrollment Frame (Card) */
+    .enroll-frame {
+        background-color: #1f2937;
+        padding: 40px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        max-width: 600px;
+        margin: auto;
+        border: 1px solid #374151;
+    }
+    
+    /* Buttons Row */
+    .button-container {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        margin-top: 50px;
+    }
+    
+    /* Specific Button Styling */
+    div.stButton > button {
+        height: 60px;
+        font-weight: 700;
+        border-radius: 5px;
+        border: none;
+        color: white;
+        font-size: 18px;
+        width: 100%;
+    }
+    
+    /* Button 1 & 2 Colors (Blue) */
+    .st-emotion-cache-unio6o.e1nzvjt11 { /* Take Images & Train Model */
+        background-color: #2563eb !important;
+    }
+    
+    /* Button 3 Color (Green) */
+    .st-emotion-cache-163o64k.e1nzvjt11 { /* Attendance */
+        background-color: #10b981 !important;
+    }
+
+    /* Input labels color */
+    .stMarkdown p {
+        color: #d1d5db;
+        font-weight: 600;
+    }
+    
+    /* Hide specific Streamlit elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
+
+# Title
+st.markdown('<h1 class="main-title">Face Recognition Attendance System</h1>', unsafe_allow_html=True)
+
+# Main Dashboard Container
+with st.container():
+    # Enrollment "Frame" (Like the card in screenshot)
+    st.markdown('<div class="enroll-frame">', unsafe_allow_html=True)
+    
+    col_label, col_input = st.columns([1, 2])
+    with col_label:
+        st.markdown("<br><p style='margin-top:10px;'>Enrollment ID:</p>", unsafe_allow_html=True)
+        st.markdown("<br><p style='margin-top:15px;'>Student Name:</p>", unsafe_allow_html=True)
         
-    with col2:
-        if st.button("Register Student", type="primary"):
+    with col_input:
+        enroll_id = st.text_input("", label_visibility="collapsed", key="id_input", placeholder="Enter ID")
+        student_name = st.text_input("", label_visibility="collapsed", key="name_input", placeholder="Enter Name")
+        
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Status/Output Message Area
+    status_container = st.empty()
+
+    # Buttons Row (Mimicking the screenshot layout)
+    st.markdown("<br>", unsafe_allow_html=True)
+    btn_col1, btn_col2, btn_col3 = st.columns(3)
+    
+    with btn_col1:
+        # Step 1: Capture
+        camera_photo = st.camera_input("1. Take Images", label_visibility="collapsed")
+        if st.button("1. Take Images", use_container_width=True, type="primary"):
             if not enroll_id or not student_name:
-                st.error("Please enter both ID and Name")
+                status_container.error("Please enter both ID and Name first.")
             elif camera_photo is None:
-                st.error("Please capture a photo first")
+                status_container.warning("Please capture a photo using the camera above.")
             else:
                 image = Image.open(camera_photo)
-                with st.spinner("Processing image..."):
+                with st.spinner("Processing 20 augmented samples..."):
                     res = attendance_pipeline.enroll_from_image(enroll_id, student_name, image, 1)
-                if "Success" in res:
-                    st.success(res)
-                else:
-                    st.error(res)
+                status_container.success(res)
 
-elif page == "2. Train Model":
-    st.header("Step 2: Train the AI Model")
-    st.info("Click the button below to train the model on all enrolled students. This might take a minute.")
-    
-    if st.button("🚀 Start Training", type="primary"):
-        with st.spinner("Training model... this may take a moment."):
-            res = attendance_pipeline.train_images()
-        if "Successfully" in res:
-            st.success(res)
-        else:
-            st.error(res)
+    with btn_col2:
+        # Step 2: Train
+        if st.button("2. Train Model", use_container_width=True, type="primary"):
+            with st.spinner("Training..."):
+                res = attendance_pipeline.train_images()
+            status_container.success(res)
 
-elif page == "3. Mark Attendance":
-    st.header("Step 3: Mark Automatic Attendance")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        camera_photo = st.camera_input("Capture Face for Attendance")
-        
-    with col2:
-        if st.button("✅ Mark Attendance", type="primary"):
-            if camera_photo is None:
-                st.error("Please capture a photo first")
+    with btn_col3:
+        # Step 3: Attendance
+        attendance_camera = st.camera_input("3. Automatic Attendance", label_visibility="collapsed")
+        if st.button("3. Automatic Attendance", use_container_width=True):
+            if attendance_camera is None:
+                status_container.warning("Capture face for attendance.")
             else:
-                image = Image.open(camera_photo)
+                image = Image.open(attendance_camera)
                 with st.spinner("Recognizing..."):
                     status, result = attendance_pipeline.recognize_face(image)
-                
                 if status == "Recognized":
-                    st.success(f"Successfully marked: {result}")
-                elif status == "No Face":
-                    st.warning("No face detected in the photo.")
+                    status_container.success(f"Marked: {result}")
                 else:
-                    st.error(f"Recognition Status: {status} - {result}")
+                    status_container.error(f"{status}: {result}")
 
-elif page == "4. View Data & Logs":
-    st.header("Step 4: View Enrolled Students and Attendance Logs")
-    
-    tab1, tab2 = st.tabs(["📊 Attendance Logs", "🖼️ Student Gallery"])
-    
-    with tab1:
-        st.subheader("Attendance Records")
-        attendance_file = "Attendance/Master_Attendance.csv"
-        if os.path.exists(attendance_file):
-            import pandas as pd
-            df = pd.read_csv(attendance_file)
-            st.dataframe(df, use_container_width=True)
-            
-            # Download button
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Attendance CSV",
-                data=csv,
-                file_name='attendance_report.csv',
-                mime='text/csv',
-            )
-        else:
-            st.info("No attendance records found yet.")
-
-    with tab2:
-        st.subheader("Captured Training Images")
-        img_path = "TrainingImage"
-        if os.path.exists(img_path):
-            images = [f for f in os.listdir(img_path) if f.endswith(('.jpg', '.png'))]
-            if images:
-                cols = st.columns(4)
-                for idx, img_name in enumerate(images):
-                    with cols[idx % 4]:
-                        img = Image.open(os.path.join(img_path, img_name))
-                        st.image(img, caption=img_name, use_container_width=True)
-            else:
-                st.info("No training images found yet.")
-        else:
-            st.info("Training folder not found.")
-
-st.divider()
-st.caption("Built with PyTorch, FaceNet, and Streamlit. Designed for stable cloud deployment.")
+st.markdown("<br><br>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; color:#4b5563;'>Original logic maintained (20-image augmentation).</p>", unsafe_allow_html=True)

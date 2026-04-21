@@ -30,7 +30,7 @@ def augment_image_dynamic(pil_img):
     return augment_trans(pil_img)
 
 def enroll_from_image(enrollment_id, name, image, sample_num):
-    """Enroll a student using a single image (for web/gradio)."""
+    """Enroll a student using a single image (generates 20 augmented samples)."""
     ensure_folders()
     try:
         enroll_id_int = int(enrollment_id)
@@ -40,13 +40,26 @@ def enroll_from_image(enrollment_id, name, image, sample_num):
     if not name.replace(" ", "").isalpha():
         return "Error: Name must be alphabetical."
         
-    # Convert PIL to BGR for augmentation functions
-    img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    # Convert PIL to RGB for augmentation
+    pil_img = image.convert('RGB')
     
-    # Save the base images
-    filename = f"TrainingImage/{name}.{enrollment_id}.{sample_num}.jpg"
-    cv2.imwrite(filename, img_cv)
+    # Augmentation pipeline (Same as original capture logic)
+    saving_trans = transforms.Compose([
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomRotation(15),
+        transforms.ColorJitter(brightness=0.4, contrast=0.4),
+        transforms.RandomAffine(degrees=0, scale=(0.8, 1.2)),
+    ])
     
+    # Generate and save 20 samples
+    for i in range(1, 21):
+        filename = f"TrainingImage/{name}.{enrollment_id}.{i}.jpg"
+        # Apply augmentation (except for the first one, which can be the clean original)
+        aug_img = saving_trans(pil_img) if i > 1 else pil_img
+        
+        # Save as BGR for OpenCV compatibility if needed, or just PIL save
+        aug_img.save(filename)
+        
     # Update CSV record
     df_path = "StudentDetails/StudentDetails.csv"
     if not os.path.exists(df_path):
@@ -60,7 +73,7 @@ def enroll_from_image(enrollment_id, name, image, sample_num):
         df = pd.concat([df, new_row], ignore_index=True)
         df.to_csv(df_path, index=False)
         
-    return f"Success: Images for {name} (ID: {enrollment_id}) added."
+    return f"Success: 20 augmented images for {name} (ID: {enrollment_id}) added and registered."
 
 def capture_images(enrollment_id, name):
     ensure_folders()
