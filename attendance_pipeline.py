@@ -55,7 +55,7 @@ def wipe_all_data():
     return "All data successfully cleared. You can start fresh now."
 
 def enroll_from_image(enrollment_id, name, image, sample_num):
-    """Enroll a student using a single image (generates exactly 20 augmented samples)."""
+    """Enroll a student using a single image (generates exactly 20 augmented face crops)."""
     ensure_folders()
     try:
         enroll_id_int = int(enrollment_id)
@@ -65,14 +65,34 @@ def enroll_from_image(enrollment_id, name, image, sample_num):
     if not name.strip():
         return "Error: Name cannot be empty."
         
-    # Convert PIL to RGB for augmentation
+    # Convert PIL to RGB
     pil_img = image.convert('RGB')
     
+    # NEW: Detect and Crop Face first (Matches Image 3)
+    mtcnn, _ = get_models()
+    boxes, _ = mtcnn.detect(pil_img)
+    
+    if boxes is not None:
+        # Take the most prominent face
+        box = boxes[0]
+        x1, y1, x2, y2 = [int(b) for b in box]
+        # Add slight padding (20%)
+        w, h = x2 - x1, y2 - y1
+        x1 = max(0, x1 - int(w*0.1))
+        y1 = max(0, y1 - int(h*0.1))
+        x2 = min(pil_img.width, x2 + int(w*0.1))
+        y2 = min(pil_img.height, y2 + int(h*0.1))
+        pil_img = pil_img.crop((x1, y1, x2, y2))
+    else:
+        return "Error: No face detected in enrollment photo. Please look at the camera."
+
     # Augmentation pipeline: Flip, Zoom (scale), and Brightness (jitter)
+    # REMOVED: degrees=15 (Matches Image 3)
     saving_trans = transforms.Compose([
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.ColorJitter(brightness=0.5, contrast=0.5),
-        transforms.RandomAffine(degrees=15, scale=(0.7, 1.3), translate=(0.1, 0.1)),
+        transforms.ColorJitter(brightness=0.4, contrast=0.4),
+        transforms.RandomAffine(degrees=0, scale=(0.8, 1.2), translate=(0.05, 0.05)),
+        transforms.Resize((160, 160)) # Ensure consistent size
     ])
     
     saved_count = 0
@@ -80,28 +100,26 @@ def enroll_from_image(enrollment_id, name, image, sample_num):
     for i in range(1, 21):
         try:
             filename = f"TrainingImage/{name}.{enrollment_id}.{i}.jpg"
-            # Apply augmentation (except for the first one, which is the clean original)
-            aug_img = saving_trans(pil_img) if i > 1 else pil_img
+            # Apply augmentation (except for the first one, which is the clean crop)
+            aug_img = saving_trans(pil_img) if i > 1 else pil_img.resize((160, 160))
             aug_img.save(filename, "JPEG", quality=95)
             saved_count += 1
         except Exception as e:
             print(f"Failed to save sample {i}: {e}")
-            continue
-        
-    # Update CSV record
+            
+    # Update Record CSV
     df_path = "StudentDetails/StudentDetails.csv"
     if not os.path.exists(df_path):
-        df = pd.DataFrame(columns=['Id', 'Name'])
+        pd.DataFrame([[enrollment_id, name]], columns=['Id', 'Name']).to_csv(df_path, index=False)
     else:
         df = pd.read_csv(df_path)
-    
-    df['Id'] = pd.to_numeric(df['Id'], errors='coerce')
-    if enroll_id_int not in df['Id'].values:
-        new_row = pd.DataFrame([[enroll_id_int, name]], columns=['Id', 'Name'])
-        df = pd.concat([df, new_row], ignore_index=True)
-        df.to_csv(df_path, index=False)
-        
-    return f"Success: {saved_count} augmented samples (Flip/Zoom/Brightness) added for {name}. Ready for training."
+        if enrollment_id not in df['Id'].values:
+            pd.DataFrame([[enrollment_id, name]], columns=['Id', 'Name']).to_csv(df_path, mode='a', header=False, index=False)
+
+    if saved_count >= 20:
+        return f"Success! Generated exactly {saved_count} face-cropped samples for {name}."
+    else:
+        return f"Warning: Only saved {saved_count}/20 samples. Check server logs."
 
 def capture_images(enrollment_id, name):
     # (Original desktop Capture code remains if needed for local use)

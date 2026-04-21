@@ -103,18 +103,35 @@ components.html("""
     // No-op script to keep the structure, but removing the hide logic
 </script>
 <style>
-    /* Ensure camera button text is ALWAYS visible and styled */
+    /* Styling Take Photo button to match Image 1 (White bg, Red text, Red border) */
     [data-testid="stCameraInputButton"] {
-        color: white !important;
-        background-color: #10b981 !important;
+        background-color: white !important;
+        color: #ef4444 !important; /* Red-500 */
+        border: 2px solid #ef4444 !important;
+        border-radius: 5px !important;
+        font-weight: 700 !important;
         opacity: 1 !important;
         visibility: visible !important;
+        height: 50px !important;
     }
     [data-testid="stCameraInputButton"]:hover {
-        background-color: #059669 !important;
+        background-color: #fee2e2 !important; /* Very light red */
         cursor: pointer;
     }
 </style>
+<script>
+    // System recovery: Ensuring the Red/White style is enforced
+    const observer = new MutationObserver(() => {
+        const btns = document.querySelectorAll('[data-testid="stCameraInputButton"]');
+        btns.forEach(btn => {
+            btn.style.backgroundColor = "white";
+            btn.style.color = "#ef4444";
+            btn.style.border = "2px solid #ef4444";
+            btn.style.fontWeight = "bold";
+        });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+</script>
 """, height=0)
 
 # Initialize Session State
