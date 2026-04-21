@@ -1,9 +1,10 @@
-FROM python:3.9-slim
+FROM python:3.9
 
-# Install system dependencies for OpenCV and others
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -19,6 +20,8 @@ COPY . .
 # Ensure some folders exist
 RUN mkdir -p TrainingImage TrainingImageLabel StudentDetails Attendance
 
+# Expose the default Gradio port
+EXPOSE 7860
+
 # Command to run the application
-# We use Gradio's server setup in app.py
 CMD ["python", "app.py"]
