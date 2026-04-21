@@ -1,9 +1,4 @@
 opencv-python-headless
 pandas
-numpy<2.0
-torch==2.1.2
-torchvision==0.16.2
-pillow
 facenet-pytorch
 scikit-learn
-gradio
