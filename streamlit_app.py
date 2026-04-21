@@ -114,26 +114,11 @@ with st.container():
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     
     with btn_col1:
-        # Step 1: Capture
         if st.button("1. Take Images", use_container_width=True, type="primary"):
             st.session_state.show_enroll_cam = not st.session_state.show_enroll_cam
             st.session_state.show_attendance_cam = False
-        
-        if st.session_state.show_enroll_cam:
-            camera_photo = st.camera_input("Capture Face for Enrollment", label_visibility="collapsed")
-            if camera_photo:
-                if not enroll_id or not student_name:
-                    st.error("Please enter both ID and Name first.")
-                else:
-                    image = Image.open(camera_photo)
-                    with st.spinner("Processing 20 augmented samples..."):
-                        res = attendance_pipeline.enroll_from_image(enroll_id, student_name, image, 1)
-                    st.success(res)
-                    st.session_state.show_enroll_cam = False # Close camera after success
-                    st.rerun()
 
     with btn_col2:
-        # Step 2: Train
         if st.button("2. Train Model", use_container_width=True, type="primary"):
             st.session_state.show_enroll_cam = False
             st.session_state.show_attendance_cam = False
@@ -142,26 +127,40 @@ with st.container():
             st.success(res)
 
     with btn_col3:
-        # Step 3: Attendance
         if st.button("3. Automatic Attendance", use_container_width=True):
             st.session_state.show_attendance_cam = not st.session_state.show_attendance_cam
             st.session_state.show_enroll_cam = False
-            
-        if st.session_state.show_attendance_cam:
-            attendance_camera = st.camera_input("Capture Face for Attendance", label_visibility="collapsed")
-            if attendance_camera:
-                image = Image.open(attendance_camera)
-                with st.spinner("Recognizing..."):
-                    status, result = attendance_pipeline.recognize_face(image)
-                if status == "Recognized":
-                    st.success(f"Marked: {result}")
-                else:
-                    st.error(f"{status}: {result}")
-                st.session_state.show_attendance_cam = False # Close camera after success
+
+    # Camera area below buttons (Full width for better visibility)
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    if st.session_state.show_enroll_cam:
+        st.subheader("📸 Camera: Enrollment")
+        camera_photo = st.camera_input("Capture Face for Enrollment", label_visibility="collapsed")
+        if camera_photo:
+            if not enroll_id or not student_name:
+                st.error("Please enter both ID and Name first.")
+            else:
+                image = Image.open(camera_photo)
+                with st.spinner("Processing 20 augmented samples..."):
+                    res = attendance_pipeline.enroll_from_image(enroll_id, student_name, image, 1)
+                st.success(res)
+                st.session_state.show_enroll_cam = False 
                 st.rerun()
 
-st.markdown("<br><br>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center; color:#4b5563;'>Original logic maintained (20-image augmentation).</p>", unsafe_allow_html=True)
+    if st.session_state.show_attendance_cam:
+        st.subheader("🔍 Camera: Automatic Attendance")
+        attendance_camera = st.camera_input("Capture Face for Attendance", label_visibility="collapsed")
+        if attendance_camera:
+            image = Image.open(attendance_camera)
+            with st.spinner("Recognizing..."):
+                status, result = attendance_pipeline.recognize_face(image)
+            if status == "Recognized":
+                st.success(f"Marked: {result}")
+            else:
+                st.error(f"{status}: {result}")
+            st.session_state.show_attendance_cam = False 
+            st.rerun()
 
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("<p style='text-align:center; color:#4b5563;'>Original logic maintained (20-image augmentation).</p>", unsafe_allow_html=True)
