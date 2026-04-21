@@ -1,4 +1,7 @@
 opencv-python-headless
 pandas
+numpy
+pillow
 facenet-pytorch
 scikit-learn
+gradio
