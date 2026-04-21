@@ -318,34 +318,31 @@ def recognize_face(image):
         draw.rectangle([x1, y1, x2, y2], outline="blue", width=5)
         
         try:
-            face_crop = img_rgb.crop((x1, y1, x2, y2))
+            # 🌟 SYNC PADDING: Match enrollment 10% padding for better math
+            w, h = x2 - x1, y2 - y1
+            cx1 = max(0, x1 - int(w*0.1))
+            cy1 = max(0, y1 - int(h*0.1))
+            cx2 = min(img_rgb.width, x2 + int(w*0.1))
+            cy2 = min(img_rgb.height, y2 + int(h*0.1))
+            
+            face_crop = img_rgb.crop((cx1, cy1, cx2, cy2))
             img_tensor = trans(face_crop).unsqueeze(0).to(device)
-            # 🌟 Standardize the capture exactly like training
+            # Standardize
             img_tensor = (img_tensor - 127.5) / 128.0
             
             with torch.no_grad():
                 emb = resnet(img_tensor).cpu().numpy()[0]
-                # 🌟 L2 Normalize for hyper-sphere compare
+                # L2 Normalize
                 emb = emb / (np.linalg.norm(emb) + 1e-6)
             
-            # 🌟 GROUP-MEAN MATCHING: Calculate distance to each student cluster
-            best_id = -1
-            min_mean_dist = 2.0 # Unit vector dist range is [0, 2]
+            # 🌟 NEAREST-NEIGHBOR: Find the single best match (Best for angle variance)
+            dists = np.linalg.norm(saved_embeddings - emb, axis=1)
+            min_dist_idx = np.argmin(dists)
+            min_dist = dists[min_dist_idx]
             
-            for uid in np.unique(saved_ids):
-                # Calculate the average distance to this student's 20 images
-                student_masks = (saved_ids == uid)
-                student_embs = saved_embeddings[student_masks]
-                dists = np.linalg.norm(student_embs - emb, axis=1)
-                mean_dist = np.mean(dists)
-                
-                if mean_dist < min_mean_dist:
-                    min_mean_dist = mean_dist
-                    best_id = uid
-            
-            # 🌟 TIGHT THRESHOLD: Standard 0.85 for FaceNet L2-Norm
-            if min_mean_dist < 0.85:
-                # Find Name
+            # 🌟 CALIBRATED THRESHOLD: 1.0 is the Goldilocks zone for L2-Norm FaceNet
+            if min_dist < 1.0:
+                best_id = saved_ids[min_dist_idx]
                 name_row = df.loc[df['Id'] == best_id]['Name'].values
                 name = name_row[0] if len(name_row) > 0 else "Unknown"
                 display_text = f"{best_id}-{name}"
