@@ -44,31 +44,33 @@ st.markdown("""
         margin-top: 50px;
     }
     
-    /* Specific Button Styling */
+    /* Specific Button Styling with aggressive overrides */
     div.stButton > button {
-        height: 60px;
-        font-weight: 700;
-        border-radius: 5px;
-        border: none;
-        color: white;
-        font-size: 18px;
-        width: 100%;
+        height: 60px !important;
+        font-weight: 700 !important;
+        border-radius: 5px !important;
+        color: white !important;
+        font-size: 18px !important;
+        width: 100% !important;
+        border: none !important;
     }
     
-    /* Button 1 & 2 Colors (Blue) */
-    .st-emotion-cache-unio6o.e1nzvjt11 { /* Take Images & Train Model */
+    /* Target Primary buttons (1 and 2) */
+    button[kind="primary"] {
         background-color: #2563eb !important;
     }
     
-    /* Button 3 Color (Green) */
-    .st-emotion-cache-163o64k.e1nzvjt11 { /* Attendance */
+    /* Target Secondary button (3) */
+    button[kind="secondary"] {
         background-color: #10b981 !important;
+        color: white !important;
     }
 
     /* Input labels color */
     .stMarkdown p {
         color: #d1d5db;
         font-weight: 600;
+        margin-bottom: 5px;
     }
     
     /* Hide specific Streamlit elements */
@@ -94,13 +96,13 @@ with st.container():
     
     col_label_id, col_input_id = st.columns([1, 3])
     with col_label_id:
-        st.markdown("<p style='margin-top:10px;'>Enrollment ID:</p>", unsafe_allow_html=True)
+        st.markdown("<p style='margin-top:5px;'>Enrollment ID:</p>", unsafe_allow_html=True)
     with col_input_id:
         enroll_id = st.text_input("", label_visibility="collapsed", key="id_input", placeholder="Enter ID")
 
     col_label_name, col_input_name = st.columns([1, 3])
     with col_label_name:
-        st.markdown("<p style='margin-top:10px;'>Student Name:</p>", unsafe_allow_html=True)
+        st.markdown("<p style='margin-top:5px;'>Student Name:</p>", unsafe_allow_html=True)
     with col_input_name:
         student_name = st.text_input("", label_visibility="collapsed", key="name_input", placeholder="Enter Name")
         
@@ -110,7 +112,7 @@ with st.container():
     status_container = st.container()
 
     # Buttons Row (Mimicking the screenshot layout)
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     
     with btn_col1:
@@ -131,7 +133,7 @@ with st.container():
             st.session_state.show_attendance_cam = not st.session_state.show_attendance_cam
             st.session_state.show_enroll_cam = False
 
-    # Camera area below buttons (Full width for better visibility)
+    # Camera area below buttons
     st.markdown("<br>", unsafe_allow_html=True)
     
     if st.session_state.show_enroll_cam:
@@ -162,5 +164,5 @@ with st.container():
             st.session_state.show_attendance_cam = False 
             st.rerun()
 
-st.markdown("<br><br>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("<p style='text-align:center; color:#4b5563;'>Original logic maintained (20-image augmentation).</p>", unsafe_allow_html=True)
