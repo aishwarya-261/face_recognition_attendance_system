@@ -103,45 +103,41 @@ components.html("""
     // No-op script to keep the structure, but removing the hide logic
 </script>
 <style>
-    /* 🔴 AGGRESSIVE STYLE: Fix Take Photo button (Image 1 style) */
-    [data-testid="stCameraInputButton"], 
-    [data-testid="stCameraInputButton"] button,
-    [data-testid="stCameraInputButton"] span {
+    /* 🔴 THE FINAL FIX: Force Red text on White background for Camera Button */
+    div[data-testid="stCameraInput"] button {
         background-color: white !important;
-        color: #ef4444 !important; /* Red Text */
-        border: 2px solid #ef4444 !important;
-        border-radius: 5px !important;
-        font-weight: 800 !important;
+        color: #ff4b4b !important; /* Streamlit Red */
+        border: 2px solid #ff4b4b !important;
         opacity: 1 !important;
         visibility: visible !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
     }
-    [data-testid="stCameraInputButton"] button:hover {
-        background-color: #fee2e2 !important; /* Light Hover */
-        color: #b91c1c !important; /* Darker Red on hover */
+    div[data-testid="stCameraInput"] button:hover {
+        background-color: #fee2e2 !important;
+        color: #ff4b4b !important;
+    }
+    
+    /* Ensure the internal span (text) is also forced red */
+    div[data-testid="stCameraInput"] button span {
+        color: #ff4b4b !important;
+        visibility: visible !important;
     }
 </style>
 <script>
-    // 🛡️ RECOVERY SCRIPT: Force red text if Streamlit tries to hide it
-    function forceButtonStyle() {
-        const btns = document.querySelectorAll('[data-testid="stCameraInputButton"] button');
-        btns.forEach(btn => {
+    // System recovery: Continually ensuring the button text is red
+    function fixCameraButton() {
+        const cameraButtons = document.querySelectorAll('div[data-testid="stCameraInput"] button');
+        cameraButtons.forEach(btn => {
+            btn.style.color = "#ff4b4b";
             btn.style.backgroundColor = "white";
-            btn.style.color = "#ef4444";
-            btn.style.border = "2px solid #ef4444";
-            btn.style.fontWeight = "bold";
+            btn.style.borderColor = "#ff4b4b";
             const spans = btn.querySelectorAll('span');
-            spans.forEach(span => {
-                span.style.color = "#ef4444";
-                span.style.visibility = "visible";
+            spans.forEach(s => {
+                s.style.color = "#ff4b4b";
+                s.style.visibility = "visible";
             });
         });
     }
-    const observer = new MutationObserver(forceButtonStyle);
-    observer.observe(document.body, { childList: true, subtree: true });
-    setInterval(forceButtonStyle, 1000); // Constant check
+    setInterval(fixCameraButton, 500);
 </script>
 """, height=0)
 
