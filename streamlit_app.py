@@ -195,5 +195,54 @@ with main_right:
             st.session_state.show_attendance_cam = False
             st.rerun()
 
-st.markdown("<br><br>", unsafe_allow_html=True)
+st.divider()
+
+# Discreet Admin Dashboard at the bottom
+with st.expander("🔓 Admin Access (Host Only)"):
+    admin_password = st.text_input("Enter Password", type="password")
+    
+    # You can change 'aishwarya123' to any password you want
+    if admin_password == "aishwarya123":
+        st.success("Access Granted")
+        
+        tab_logs, tab_imgs = st.tabs(["📊 Attendance Logs", "🖼️ Student Gallery"])
+        
+        with tab_logs:
+            st.subheader("Private Attendance Records")
+            attendance_file = "Attendance/Master_Attendance.csv"
+            if os.path.exists(attendance_file):
+                import pandas as pd
+                df = pd.read_csv(attendance_file)
+                st.dataframe(df, use_container_width=True)
+                
+                # Download button
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Master Attendance CSV",
+                    data=csv,
+                    file_name='master_attendance.csv',
+                    mime='text/csv',
+                )
+            else:
+                st.info("No attendance records found on server.")
+
+        with tab_imgs:
+            st.subheader("Enrolled Student Images")
+            img_path = "TrainingImage"
+            if os.path.exists(img_path):
+                images = [f for f in os.listdir(img_path) if f.endswith(('.jpg', '.png'))]
+                if images:
+                    st.write(f"Total Images: {len(images)}")
+                    cols = st.columns(4)
+                    for idx, img_name in enumerate(images):
+                        with cols[idx % 4]:
+                            img = Image.open(os.path.join(img_path, img_name))
+                            st.image(img, caption=img_name, use_container_width=True)
+                else:
+                    st.info("No training images found yet.")
+            else:
+                st.info("Training folder is empty.")
+    elif admin_password:
+        st.error("Incorrect Password")
+
 st.markdown("<p style='text-align:center; color:#4b5563;'>Core logic: 20-image augmentation | Private Logs maintained.</p>", unsafe_allow_html=True)
