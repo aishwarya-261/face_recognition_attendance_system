@@ -83,6 +83,10 @@ st.markdown("""
 
     /* ── Info / warning / error / success boxes ── */
     .stAlert p { color: #111827 !important; }
+    div[data-testid="stNotificationContentError"] p,
+    div[data-testid="stNotificationContentWarning"] p,
+    div[data-testid="stNotificationContentInfo"] p,
+    div[data-testid="stNotificationContentSuccess"] p { color: #111827 !important; }
 
     /* ── Status boxes (custom) ── */
     .status-box {
@@ -337,9 +341,9 @@ with main_right:
             st.success(res)
             st.rerun()   # Refresh status bar
 
-    if st.button("3. Automatic Attendance", use_container_width=True):
+    if st.button("3. Automatic Attendance", use_container_width=True, type="primary"):
         if not model_exists:
-            st.error("Please train the model first (Step 2)!")
+            st.error("⚠️ Please train the model first (Step 2)!")
         else:
             st.session_state.show_attendance_cam = True
             st.session_state.show_enroll_cam = False
