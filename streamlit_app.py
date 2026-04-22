@@ -130,6 +130,31 @@ st.markdown("""
         border: none !important;
     }
 
+    /* ── Secondary buttons (Close Camera, Wipe etc.) ── */
+    div.stButton > button[kind="secondary"] {
+        background-color: #7f1d1d !important;
+        color: white !important;
+        border: 1px solid #ef4444 !important;
+    }
+    div.stButton > button[kind="secondary"]:hover {
+        background-color: #991b1b !important;
+    }
+
+    /* ── Success / Warning / Error / Info alerts ── */
+    .stAlert, .stAlert > div, .stAlert p,
+    [data-testid="stNotification"] p,
+    [data-testid="stNotification"] span,
+    [data-testid="stNotificationContentSuccess"] p,
+    [data-testid="stNotificationContentSuccess"] span,
+    [data-testid="stNotificationContentWarning"] p,
+    [data-testid="stNotificationContentWarning"] span,
+    [data-testid="stNotificationContentError"] p,
+    [data-testid="stNotificationContentError"] span,
+    [data-testid="stNotificationContentInfo"] p,
+    [data-testid="stNotificationContentInfo"] span {
+        color: #111827 !important;
+    }
+
     /* ── Camera button: always Red/White ── */
     div[data-testid="stCameraInput"] button {
         background-color: white !important;
