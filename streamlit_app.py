@@ -20,15 +20,82 @@ st.set_page_config(
 # ─────────────────────────────────────────────────────────
 st.markdown("""
     <style>
-    .stApp { background-color: #111827; color: white; }
-    .main-title {
-        text-align: center;
-        font-family: 'Helvetica Neue', sans-serif;
-        font-weight: 700;
-        font-size: 40px;
-        margin-top: 10px;
-        margin-bottom: 20px;
+    /* ── Base ── */
+    .stApp { background-color: #111827; color: #f9fafb; }
+
+    /* ── Force ALL text white so nothing is invisible ── */
+    .stApp, .stApp p, .stApp span, .stApp label,
+    .stApp div, .stApp h1, .stApp h2, .stApp h3,
+    .stApp li, .stApp a {
+        color: #f9fafb !important;
     }
+
+    /* ── Inputs: text fields ── */
+    .stTextInput input {
+        background-color: #374151 !important;
+        color: #f9fafb !important;
+        border: 1px solid #6b7280 !important;
+        border-radius: 6px !important;
+    }
+    .stTextInput input::placeholder { color: #9ca3af !important; }
+    .stTextInput label { color: #f9fafb !important; font-weight: 600 !important; }
+
+    /* ── Password input ── */
+    .stTextInput input[type="password"] {
+        background-color: #374151 !important;
+        color: #f9fafb !important;
+    }
+
+    /* ── Selectbox / dropdown ── */
+    .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #374151 !important;
+        color: #f9fafb !important;
+        border-color: #6b7280 !important;
+    }
+    .stSelectbox span { color: #f9fafb !important; }
+
+    /* ── Tabs ── */
+    .stTabs [data-baseweb="tab"] {
+        color: #d1d5db !important;
+        font-weight: 600 !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #ffffff !important;
+        border-bottom: 2px solid #10b981 !important;
+    }
+
+    /* ── Expander ── */
+    .streamlit-expanderHeader {
+        color: #f9fafb !important;
+        font-weight: 700 !important;
+        background-color: #1f2937 !important;
+    }
+    .streamlit-expanderContent {
+        background-color: #1f2937 !important;
+    }
+
+    /* ── Checkbox ── */
+    .stCheckbox label { color: #f9fafb !important; }
+    .stCheckbox span { color: #f9fafb !important; }
+
+    /* ── Dataframe / table ── */
+    .stDataFrame { color: #f9fafb !important; }
+
+    /* ── Info / warning / error / success boxes ── */
+    .stAlert p { color: #111827 !important; }
+
+    /* ── Status boxes (custom) ── */
+    .status-box {
+        background-color: #1f2937;
+        padding: 12px 18px;
+        border-radius: 8px;
+        border-left: 4px solid #10b981;
+        font-size: 14px;
+        color: #f9fafb !important;
+        margin-bottom: 12px;
+    }
+
+    /* ── Enrollment card ── */
     .enroll-frame {
         background-color: #1f2937;
         padding: 30px;
@@ -36,15 +103,19 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         border: 1px solid #374151;
     }
-    .status-box {
-        background-color: #1f2937;
-        padding: 12px 18px;
-        border-radius: 8px;
-        border-left: 4px solid #10b981;
-        font-size: 14px;
-        color: #d1d5db;
-        margin-bottom: 12px;
+
+    /* ── Main title ── */
+    .main-title {
+        text-align: center;
+        font-family: 'Helvetica Neue', sans-serif;
+        font-weight: 700;
+        font-size: 40px;
+        color: #f9fafb !important;
+        margin-top: 10px;
+        margin-bottom: 20px;
     }
+
+    /* ── Sidebar / main buttons ── */
     div.stButton > button {
         height: 55px !important;
         font-weight: 700 !important;
@@ -54,7 +125,8 @@ st.markdown("""
         width: 100% !important;
         border: none !important;
     }
-    .stMarkdown p { color: #d1d5db; font-weight: 600; margin-bottom: 5px; }
+
+    /* ── Camera button: always Red/White ── */
     div[data-testid="stCameraInput"] button {
         background-color: white !important;
         color: #ff4b4b !important;
@@ -64,6 +136,10 @@ st.markdown("""
         color: #ff4b4b !important;
         visibility: visible !important;
     }
+
+    /* ── Toast ── */
+    [data-testid="stToast"] { color: #111827 !important; }
+
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
