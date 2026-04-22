@@ -2,254 +2,250 @@ import streamlit as st
 import attendance_pipeline
 from PIL import Image
 import os
+import pandas as pd
 import streamlit.components.v1 as components
 
-# Page Config - Hide sidebar and set theme
-st.set_page_config(page_title="Face Recognition Attendance", page_icon="🎓", layout="wide", initial_sidebar_state="collapsed")
+# ─────────────────────────────────────────────────────────
+# PAGE CONFIG
+# ─────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="Face Recognition Attendance",
+    page_icon="🎓",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-# Custom CSS to match the original Tkinter UI
+# ─────────────────────────────────────────────────────────
+# CSS
+# ─────────────────────────────────────────────────────────
 st.markdown("""
     <style>
-    /* Dark Background */
-    .stApp {
-        background-color: #111827;
-        color: white;
-    }
-    
-    /* Main Title */
+    .stApp { background-color: #111827; color: white; }
     .main-title {
         text-align: center;
         font-family: 'Helvetica Neue', sans-serif;
         font-weight: 700;
         font-size: 40px;
         margin-top: 10px;
-        margin-bottom: 30px;
+        margin-bottom: 20px;
     }
-    
-    /* Enrollment Frame (Card) */
     .enroll-frame {
         background-color: #1f2937;
         padding: 30px;
         border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-        max-width: 100%;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         border: 1px solid #374151;
     }
-    
-    /* Specific Button Styling */
+    .status-box {
+        background-color: #1f2937;
+        padding: 12px 18px;
+        border-radius: 8px;
+        border-left: 4px solid #10b981;
+        font-size: 14px;
+        color: #d1d5db;
+        margin-bottom: 12px;
+    }
     div.stButton > button {
-        height: 60px !important;
+        height: 55px !important;
         font-weight: 700 !important;
         border-radius: 5px !important;
         color: white !important;
-        font-size: 16px !important;
+        font-size: 15px !important;
         width: 100% !important;
         border: none !important;
     }
-    
-    /* Target Primary buttons (1 and 2) */
-    button[kind="primary"] {
-        background-color: #2563eb !important;
+    .stMarkdown p { color: #d1d5db; font-weight: 600; margin-bottom: 5px; }
+    div[data-testid="stCameraInput"] button {
+        background-color: white !important;
+        color: #ff4b4b !important;
+        border: 2px solid #ff4b4b !important;
     }
-    
-    /* Target Secondary button (3) */
-    button[kind="secondary"] {
-        background-color: #10b981 !important;
-        color: white !important;
+    div[data-testid="stCameraInput"] button span {
+        color: #ff4b4b !important;
+        visibility: visible !important;
     }
-
-    /* Input labels color */
-    .stMarkdown p {
-        color: #d1d5db;
-        font-weight: 600;
-        margin-bottom: 5px;
-    }
-    
-    /* Recognized Name Box */
-    .name-display {
-        background-color: #374151;
-        padding: 15px;
-        border-radius: 5px;
-        border-left: 5px solid #10b981;
-        font-size: 24px;
-        font-weight: 700;
-        margin-bottom: 20px;
-    }
-
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
-# Keyboard Shortcut Handler (Simulate 'q' to close camera)
-# We use a more aggressive script to catch 'q' and click the close button
+# ─────────────────────────────────────────────────────────
+# JS: 'Q' key → Take Photo then Close
+# ─────────────────────────────────────────────────────────
 components.html("""
 <script>
-    const doc = window.parent.document;
-    doc.addEventListener('keydown', function(e) {
-        if (e.key === 'q' || e.key === 'Q') {
-            // Find ALL buttons and click the one that says 'Close'
-            const buttons = doc.querySelectorAll('button');
-            buttons.forEach(function(btn) {
-                if (btn.innerText.includes('Close') || btn.innerText.includes('Q')) {
-                    btn.click();
-                }
-            });
-        }
+  const doc = window.parent.document;
+  doc.addEventListener('keydown', function(e) {
+    if (e.key !== 'q' && e.key !== 'Q') return;
+    const buttons = doc.querySelectorAll('button');
+    let captureBtn = null, closeBtn = null;
+    for (let btn of buttons) {
+      if (btn.innerText.includes('Take Photo')) captureBtn = btn;
+      if (btn.innerText.includes('Close Camera') || btn.innerText.includes('❌')) closeBtn = btn;
+    }
+    if (captureBtn) {
+      captureBtn.click();
+      setTimeout(() => { if (closeBtn) closeBtn.click(); }, 300);
+    } else if (closeBtn) {
+      closeBtn.click();
+    }
+  });
+
+  function fixCameraBtn() {
+    doc.querySelectorAll('div[data-testid="stCameraInput"] button').forEach(btn => {
+      btn.style.backgroundColor = 'white';
+      btn.style.color = '#ff4b4b';
+      btn.style.borderColor = '#ff4b4b';
+      btn.querySelectorAll('span').forEach(s => {
+        s.style.color = '#ff4b4b';
+        s.style.visibility = 'visible';
+      });
     });
-</script>
-<script>
-    // No-op script to keep the structure, but removing the hide logic
-</script>
-<style>
-    /* 🔴 THE FINAL FIX: Force Red text on White background for Camera Button */
-    div[data-testid="stCameraInput"] button {
-        background-color: white !important;
-        color: #ff4b4b !important; /* Streamlit Red */
-        border: 2px solid #ff4b4b !important;
-        opacity: 1 !important;
-        visibility: visible !important;
-    }
-    div[data-testid="stCameraInput"] button:hover {
-        background-color: #fee2e2 !important;
-        color: #ff4b4b !important;
-    }
-    
-    /* Ensure the internal span (text) is also forced red */
-    div[data-testid="stCameraInput"] button span {
-        color: #ff4b4b !important;
-        visibility: visible !important;
-    }
-</style>
-<script>
-    // 📸 FAST DUAL ACTION: Press Q to Capture then Close (200ms)
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'q' || event.key === 'Q') {
-            const buttons = window.parent.document.querySelectorAll('button');
-            let captureBtn = null;
-            let closeBtn = null;
-            
-            for (let btn of buttons) {
-                if (btn.innerText.includes("Take Photo")) captureBtn = btn;
-                if (btn.innerText.includes("Close Camera") || btn.innerText.includes("❌")) closeBtn = btn;
-            }
-            
-            if (captureBtn) {
-                captureBtn.click();
-                // Optimized fast delay for snappier performance
-                setTimeout(() => { if (closeBtn) closeBtn.click(); }, 200);
-            } else if (closeBtn) {
-                closeBtn.click();
-            }
-        }
-    });
-</script>
-<script>
-    // System recovery: Continually ensuring the button text is red
-    function fixCameraButton() {
-        const cameraButtons = document.querySelectorAll('div[data-testid="stCameraInput"] button');
-        cameraButtons.forEach(btn => {
-            btn.style.color = "#ff4b4b";
-            btn.style.backgroundColor = "white";
-            btn.style.borderColor = "#ff4b4b";
-            const spans = btn.querySelectorAll('span');
-            spans.forEach(s => {
-                s.style.color = "#ff4b4b";
-                s.style.visibility = "visible";
-            });
-        });
-    }
-    setInterval(fixCameraButton, 500);
+  }
+  setInterval(fixCameraBtn, 600);
 </script>
 """, height=0)
 
-# Initialize Session State
-if 'show_enroll_cam' not in st.session_state:
-    st.session_state.show_enroll_cam = False
-if 'show_attendance_cam' not in st.session_state:
-    st.session_state.show_attendance_cam = False
-if 'last_recognized' not in st.session_state:
-    st.session_state.last_recognized = ""
-if 'marked_img' not in st.session_state:
-    st.session_state.marked_img = None
+# ─────────────────────────────────────────────────────────
+# SESSION STATE INIT
+# ─────────────────────────────────────────────────────────
+for key, default in {
+    'show_enroll_cam': False,
+    'show_attendance_cam': False,
+    'last_recognized': '',
+    'marked_img': None,
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-# Title
+# ─────────────────────────────────────────────────────────
+# SYSTEM STATUS BAR  ← NEW: shows user exactly what state system is in
+# ─────────────────────────────────────────────────────────
+def get_system_status():
+    attendance_pipeline.ensure_folders()
+    img_count = len([f for f in os.listdir("TrainingImage") if f.endswith('.jpg')]) \
+        if os.path.exists("TrainingImage") else 0
+    model_exists = os.path.exists("TrainingImageLabel/Trainer.pkl")
+    student_count = 0
+    if os.path.exists("StudentDetails/StudentDetails.csv"):
+        try:
+            df = pd.read_csv("StudentDetails/StudentDetails.csv")
+            student_count = len(df)
+        except Exception:
+            student_count = 0
+    return img_count, model_exists, student_count
+
+img_count, model_exists, student_count = get_system_status()
+
+col_s1, col_s2, col_s3 = st.columns(3)
+with col_s1:
+    icon = "✅" if student_count > 0 else "❌"
+    st.markdown(f"<div class='status-box'>{icon} <b>Students Enrolled:</b> {student_count}</div>", unsafe_allow_html=True)
+with col_s2:
+    icon = "✅" if img_count > 0 else "❌"
+    st.markdown(f"<div class='status-box'>{icon} <b>Training Images:</b> {img_count}</div>", unsafe_allow_html=True)
+with col_s3:
+    icon = "✅" if model_exists else "❌"
+    label = "Model Ready" if model_exists else "Model NOT trained — click Train Model!"
+    st.markdown(f"<div class='status-box'>{icon} <b>Model:</b> {label}</div>", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────
+# TITLE
+# ─────────────────────────────────────────────────────────
 st.markdown('<h1 class="main-title">Face Recognition Attendance System</h1>', unsafe_allow_html=True)
 
-# 2-Column Layout: Left for Camera, Right for Form/Buttons
+# ─────────────────────────────────────────────────────────
+# MAIN LAYOUT
+# ─────────────────────────────────────────────────────────
 main_left, main_right = st.columns([1.5, 2], gap="large")
 
 with main_left:
     st.markdown("### 📷 Camera View")
-    
+
     if st.session_state.show_enroll_cam:
-        st.info("💡 Capture Face for Enrollment (Static)")
+        st.info("💡 Look at the camera and click 'Take Photo' (or press Q)")
         camera_photo = st.camera_input("Enrollment", label_visibility="collapsed")
         if camera_photo:
             img = Image.open(camera_photo)
-            with st.spinner("Saving exactly 20 augmented samples..."):
-                res = attendance_pipeline.enroll_from_image(st.session_state.get('id_input',''), st.session_state.get('name_input',''), img, 1)
-            st.success(res)
-            st.session_state.show_enroll_cam = False
-            st.rerun()
+            eid = st.session_state.get('id_input', '')
+            ename = st.session_state.get('name_input', '')
+            if not eid or not ename:
+                st.error("Please enter ID and Name first!")
+            else:
+                with st.spinner("Detecting face & saving 20 augmented samples..."):
+                    res = attendance_pipeline.enroll_from_image(eid, ename, img, 1)
+                if res.startswith("✅"):
+                    st.success(res)
+                    st.session_state.show_enroll_cam = False
+                    st.rerun()
+                else:
+                    st.error(res)
 
     elif st.session_state.show_attendance_cam:
-        # 🌟 BACK TO STABLE CAMERA
-        st.info("💡 Look at the camera and click 'Take Photo' to log attendance.")
-        attendance_camera = st.camera_input("Attendance", label_visibility="collapsed")
-        
-        if attendance_camera:
-            img = Image.open(attendance_camera)
-            with st.spinner("Recognizing..."):
-                # Use optimized recognize_face (returns Status, NameText, AnnotatedImg)
-                status, result, annotated = attendance_pipeline.recognize_face(img)
-                
-            if status == "Recognized":
-                st.session_state.last_recognized = result
-                st.session_state.marked_img = annotated
-                # Log attendance
-                first_person = result.split(",")[0].strip()
-                attendance_pipeline.log_attendance(first_person)
-                st.toast(f"Attendance marked for {result}!", icon="✅")
-            else:
-                st.session_state.marked_img = annotated
-                st.error(f"{status}: {result}")
-        
-        # Display the result with BOXES and GREEN NAMES
-        if st.session_state.marked_img is not None:
-            st.subheader("Last Recognition Result:")
-            st.image(st.session_state.marked_img, use_container_width=True)
-            if st.button("Clear Result & Try Again"):
-                st.session_state.marked_img = None
-                st.rerun()
-            
+        if not model_exists:
+            st.error("⚠️ No trained model found! Please enroll students and click 'Train Model' first.")
+        else:
+            st.info("💡 Look at the camera and click 'Take Photo' (or press Q)")
+            attendance_camera = st.camera_input("Attendance", label_visibility="collapsed")
+
+            if attendance_camera:
+                img = Image.open(attendance_camera)
+                with st.spinner("Recognizing face..."):
+                    status, result, annotated = attendance_pipeline.recognize_face(img)
+
+                if status == "Recognized":
+                    st.session_state.last_recognized = result
+                    st.session_state.marked_img = annotated
+                    first_person = result.split(",")[0].strip()
+                    attendance_pipeline.log_attendance(first_person)
+                    st.toast(f"✅ Attendance marked for: {result}", icon="✅")
+                elif status == "No Face":
+                    st.session_state.marked_img = annotated
+                    st.warning("No face detected. Please look directly at the camera.")
+                else:
+                    st.session_state.marked_img = annotated
+                    st.warning(f"Face detected but not recognized. Status: {status} — {result}")
+
+            if st.session_state.marked_img is not None:
+                st.subheader("Last Recognition Result:")
+                st.image(st.session_state.marked_img, use_container_width=True)
+                if st.session_state.last_recognized:
+                    st.success(f"✅ Recognized: **{st.session_state.last_recognized}**")
+                if st.button("Clear & Try Again"):
+                    st.session_state.marked_img = None
+                    st.session_state.last_recognized = ''
+                    st.rerun()
     else:
-        st.markdown("<div style='height: 300px; border: 2px dashed #374151; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #4b5563;'>Camera is Closed. Click 'Automatic Attendance' to open.</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='height:300px;border:2px dashed #374151;border-radius:10px;"
+            "display:flex;align-items:center;justify-content:center;color:#4b5563;'>"
+            "Camera is Closed. Use buttons on the right to begin.</div>",
+            unsafe_allow_html=True
+        )
 
 with main_right:
-    # Enrollment Frame
     st.markdown('<div class="enroll-frame">', unsafe_allow_html=True)
     st.markdown("#### Student Enrollment")
-    
+
     col_label_id, col_input_id = st.columns([1, 2])
     with col_label_id:
         st.markdown("<p style='margin-top:5px;'>Enrollment ID:</p>", unsafe_allow_html=True)
     with col_input_id:
-        enroll_id = st.text_input("", label_visibility="collapsed", key="id_input", placeholder="Enter ID")
+        enroll_id = st.text_input("", label_visibility="collapsed", key="id_input", placeholder="e.g. 101")
 
     col_label_name, col_input_name = st.columns([1, 2])
     with col_label_name:
         st.markdown("<p style='margin-top:5px;'>Student Name:</p>", unsafe_allow_html=True)
     with col_input_name:
-        student_name = st.text_input("", label_visibility="collapsed", key="name_input", placeholder="Enter Name")
-    st.markdown('</div>', unsafe_allow_html=True)
+        student_name = st.text_input("", label_visibility="collapsed", key="name_input", placeholder="e.g. Aishwarya")
 
-    # Buttons Container
+    st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
+
     if st.button("1. Take Images", use_container_width=True, type="primary"):
         if not enroll_id or not student_name:
-            st.error("Please enter ID and Name on the right first!")
+            st.error("Please enter both ID and Name before taking images!")
         else:
             st.session_state.show_enroll_cam = True
             st.session_state.show_attendance_cam = False
@@ -257,15 +253,21 @@ with main_right:
     if st.button("2. Train Model", use_container_width=True, type="primary"):
         st.session_state.show_enroll_cam = False
         st.session_state.show_attendance_cam = False
-        with st.spinner("Training on 20 augmented samples..."):
-            res = attendance_pipeline.train_images()
-        st.success(res)
+        if img_count == 0:
+            st.error("No images to train on! Please enroll students first.")
+        else:
+            with st.spinner(f"Training model on {img_count} images..."):
+                res = attendance_pipeline.train_images()
+            st.success(res)
+            st.rerun()   # Refresh status bar
 
     if st.button("3. Automatic Attendance", use_container_width=True):
-        st.session_state.show_attendance_cam = True
-        st.session_state.show_enroll_cam = False
+        if not model_exists:
+            st.error("Please train the model first (Step 2)!")
+        else:
+            st.session_state.show_attendance_cam = True
+            st.session_state.show_enroll_cam = False
 
-    # Close/Stop Button (Manual 'Q' alternative)
     if st.session_state.show_enroll_cam or st.session_state.show_attendance_cam:
         if st.button("❌ Close Camera (Press Q)", use_container_width=True):
             st.session_state.show_enroll_cam = False
@@ -275,14 +277,15 @@ with main_right:
 
 st.divider()
 
-# Discreet Admin Dashboard at the bottom
+# ─────────────────────────────────────────────────────────
+# ADMIN DASHBOARD
+# ─────────────────────────────────────────────────────────
 with st.expander("🔓 Admin Access (Host Only)"):
     admin_password = st.text_input("Enter Password", type="password")
-    
+
     if admin_password == "aishwarya123":
-        st.success("Access Granted")
-        
-        # New Danger Zone
+        st.success("Access Granted ✅")
+
         st.warning("⚠️ Danger Zone")
         if st.checkbox("Enable Wipe Button"):
             if st.button("🗑️ Clear All System Data (Permanent)", type="secondary"):
@@ -291,18 +294,14 @@ with st.expander("🔓 Admin Access (Host Only)"):
                 st.rerun()
 
         tab_logs, tab_imgs = st.tabs(["📊 Attendance Logs", "🖼️ Student Gallery"])
-        
+
         with tab_logs:
             st.subheader("Private Attendance Records")
             attendance_file = "Attendance/Master_Attendance.csv"
             if os.path.exists(attendance_file):
-                import pandas as pd
                 df = pd.read_csv(attendance_file)
-                # 🌟 NEW: Sort descending (newest at top)
                 df_sorted = df.iloc[::-1].reset_index(drop=True)
                 st.dataframe(df_sorted, use_container_width=True)
-                
-                # Download button
                 csv = df_sorted.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📥 Download Master Attendance CSV",
@@ -311,26 +310,28 @@ with st.expander("🔓 Admin Access (Host Only)"):
                     mime='text/csv',
                 )
             else:
-                st.info("No attendance records found on server.")
+                st.info("No attendance records found.")
 
         with tab_imgs:
             st.subheader("Enrolled Student Images")
             img_path = "TrainingImage"
             if os.path.exists(img_path):
-                # 🌟 IMPROVED: Scans All 20 images
-                images = sorted([f for f in os.listdir(img_path) if f.endswith(('.jpg', '.png'))])
+                images = sorted([f for f in os.listdir(img_path) if f.lower().endswith(('.jpg', '.png'))])
                 if images:
-                    st.write(f"Total Images in System: {len(images)}")
+                    st.write(f"Total Images: {len(images)}")
                     cols = st.columns(8)
                     for idx, img_name in enumerate(images):
                         with cols[idx % 8]:
                             img = Image.open(os.path.join(img_path, img_name))
-                            st.image(img, caption=img_name, use_container_width=True)
+                            st.image(img, caption=img_name[:12], use_container_width=True)
                 else:
-                    st.info("No training images found yet.")
+                    st.info("No training images found.")
             else:
                 st.info("Training folder is empty.")
     elif admin_password:
         st.error("Incorrect Password")
 
-st.markdown("<p style='text-align:center; color:#4b5563;'>Core logic: 20-image augmentation | Private Logs maintained.</p>", unsafe_allow_html=True)
+st.markdown(
+    "<p style='text-align:center;color:#4b5563;'>20-image augmentation | IST timestamps | Private logs</p>",
+    unsafe_allow_html=True
+)
