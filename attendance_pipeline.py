@@ -7,18 +7,20 @@ import time
 import torch
 from facenet_pytorch import MTCNN, InceptionResnetV1
 from torchvision import transforms
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import pickle
+from collections import Counter
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# Global Caches for Real-Time Performance
+# ─────────────────────────────────────────────
+# MODEL SINGLETONS
+# ─────────────────────────────────────────────
 _mtcnn = None
 _resnet = None
 _trained_data = None
 
 def get_models():
-    """Singleton to load and cache models for real-time performance."""
     global _mtcnn, _resnet
     if _mtcnn is None:
         _mtcnn = MTCNN(keep_all=True, device=device)
@@ -26,10 +28,9 @@ def get_models():
         _resnet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
     return _mtcnn, _resnet
 
-def get_trained_data():
-    """Singleton to load and cache trained face embeddings."""
+def get_trained_data(force_reload=False):
     global _trained_data
-    if _trained_data is None:
+    if _trained_data is None or force_reload:
         try:
             with open("TrainingImageLabel/Trainer.pkl", 'rb') as f:
                 _trained_data = pickle.load(f)
@@ -38,502 +39,438 @@ def get_trained_data():
     return _trained_data
 
 def ensure_folders():
-    """Utility to ensure all required data folders exist."""
     for f in ['TrainingImage', 'TrainingImageLabel', 'StudentDetails', 'Attendance']:
         if not os.path.exists(f):
             os.makedirs(f)
 
+# ─────────────────────────────────────────────
+# SHARED PREPROCESSING — USED EVERYWHERE
+# ─────────────────────────────────────────────
+def get_embedding(resnet, pil_face_crop):
+    """
+    Convert a PIL face crop → unit-normalized 512-d embedding.
+    This EXACT function must be used during BOTH training and recognition.
+    """
+    trans = transforms.Compose([
+        transforms.Resize((160, 160)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])  # normalize to [-1, 1]
+    ])
+    tensor = trans(pil_face_crop.convert('RGB')).unsqueeze(0).to(device)
+    with torch.no_grad():
+        emb = resnet(tensor).cpu().numpy()[0]
+    # L2 normalize so cosine distance == euclidean distance on unit sphere
+    emb = emb / (np.linalg.norm(emb) + 1e-10)
+    return emb
+
+# ─────────────────────────────────────────────
+# WIPE ALL
+# ─────────────────────────────────────────────
 def wipe_all_data():
-    """Wipes all student images, records, and attendance logs."""
     import shutil
-    ensure_folders() # Ensure they exist before trying to delete just in case
+    ensure_folders()
     for folder in ['TrainingImage', 'TrainingImageLabel', 'StudentDetails', 'Attendance']:
         if os.path.exists(folder):
             shutil.rmtree(folder)
-    # Recreate empty folders
     ensure_folders()
+    global _trained_data
+    _trained_data = None
     return "All data successfully cleared. You can start fresh now."
 
-def enroll_from_image(enrollment_id, name, image, sample_num):
-    """Enroll a student using a single image (generates exactly 20 augmented face crops)."""
+# ─────────────────────────────────────────────
+# ENROLLMENT (Web — photo upload)
+# ─────────────────────────────────────────────
+def enroll_from_image(enrollment_id, name, image, sample_num=None):
+    """Enroll a student from a single snapshot. Generates 20 augmented face crops."""
     ensure_folders()
     try:
-        enroll_id_int = int(enrollment_id)
+        int(enrollment_id)
     except Exception:
         return "Error: Enrollment ID must be numeric."
-        
+
     if not name.strip():
         return "Error: Name cannot be empty."
-        
-    # Convert PIL to RGB
+
     pil_img = image.convert('RGB')
-    
-    # NEW: Detect and Crop Face first (Matches Image 3)
     mtcnn, _ = get_models()
     boxes, _ = mtcnn.detect(pil_img)
-    
-    if boxes is not None:
-        # Take the most prominent face
-        box = boxes[0]
-        x1, y1, x2, y2 = [int(b) for b in box]
-        # Add slight padding (20%)
-        w, h = x2 - x1, y2 - y1
-        x1 = max(0, x1 - int(w*0.1))
-        y1 = max(0, y1 - int(h*0.1))
-        x2 = min(pil_img.width, x2 + int(w*0.1))
-        y2 = min(pil_img.height, y2 + int(h*0.1))
-        pil_img = pil_img.crop((x1, y1, x2, y2))
-    else:
-        return "Error: No face detected in enrollment photo. Please look at the camera."
 
-    # Augmentation pipeline: Flip, Zoom (scale), and Brightness (jitter)
-    # REMOVED: degrees=15 (Matches Image 3)
-    saving_trans = transforms.Compose([
+    if boxes is None:
+        return "Error: No face detected. Please look directly at the camera and try again."
+
+    # Pick the largest / most prominent face
+    best_idx = int(np.argmax([(b[2]-b[0])*(b[3]-b[1]) for b in boxes]))
+    x1, y1, x2, y2 = [int(b) for b in boxes[best_idx]]
+    w, h = x2 - x1, y2 - y1
+    pad = 0.15
+    x1 = max(0, x1 - int(w * pad))
+    y1 = max(0, y1 - int(h * pad))
+    x2 = min(pil_img.width,  x2 + int(w * pad))
+    y2 = min(pil_img.height, y2 + int(h * pad))
+    face_crop = pil_img.crop((x1, y1, x2, y2)).resize((160, 160), Image.LANCZOS)
+
+    # Augmentation transforms
+    aug = transforms.Compose([
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.ColorJitter(brightness=0.4, contrast=0.4),
-        transforms.RandomAffine(degrees=0, scale=(0.8, 1.2), translate=(0.05, 0.05)),
-        transforms.Resize((160, 160)) # Ensure consistent size
+        transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.1),
+        transforms.RandomAffine(degrees=0, scale=(0.85, 1.15), translate=(0.05, 0.05)),
+        transforms.Resize((160, 160)),
     ])
-    
-    saved_count = 0
-    # Generate and save exactly 20 samples
+
+    saved = 0
     for i in range(1, 21):
         try:
-            filename = f"TrainingImage/{name}.{enrollment_id}.{i}.jpg"
-            # Apply augmentation (except for the first one, which is the clean crop)
-            aug_img = saving_trans(pil_img) if i > 1 else pil_img.resize((160, 160))
-            aug_img.save(filename, "JPEG", quality=95)
-            saved_count += 1
+            fname = f"TrainingImage/{name}.{enrollment_id}.{i}.jpg"
+            out = aug(face_crop) if i > 1 else face_crop
+            out.save(fname, "JPEG", quality=95)
+            saved += 1
         except Exception as e:
-            print(f"Failed to save sample {i}: {e}")
-            
-    # Update Record CSV
+            print(f"Save error sample {i}: {e}")
+
+    # Update StudentDetails.csv
     df_path = "StudentDetails/StudentDetails.csv"
     if not os.path.exists(df_path):
         pd.DataFrame([[enrollment_id, name]], columns=['Id', 'Name']).to_csv(df_path, index=False)
     else:
         df = pd.read_csv(df_path)
-        if enrollment_id not in df['Id'].values:
-            pd.DataFrame([[enrollment_id, name]], columns=['Id', 'Name']).to_csv(df_path, mode='a', header=False, index=False)
+        df['Id'] = df['Id'].astype(str)
+        if str(enrollment_id) not in df['Id'].values:
+            pd.DataFrame([[enrollment_id, name]], columns=['Id', 'Name']).to_csv(
+                df_path, mode='a', header=False, index=False)
 
-    if saved_count >= 20:
-        return f"Success! Generated exactly {saved_count} face-cropped samples for {name}."
+    if saved >= 20:
+        return f"✅ Enrolled {name} successfully! {saved} face samples saved."
     else:
-        return f"Warning: Only saved {saved_count}/20 samples. Check server logs."
+        return f"⚠️ Warning: Only saved {saved}/20 samples."
 
-def capture_images(enrollment_id, name):
-    # (Original desktop Capture code remains if needed for local use)
-    ensure_folders()
-    ...
-    try:
-        enroll_id_int = int(enrollment_id)
-    except ValueError:
-        return "Error: Enrollment ID must be numeric."
-        
-    if not name.isalpha():
-        return "Error: Name must be alphabetical."
-        
-    mtcnn = MTCNN(keep_all=False, device=device)
-    cam = cv2.VideoCapture(0)
-    
-    if not cam.isOpened():
-        return "Error: Could not open camera. Please check if it is connected or in use."
-        
-    sampleNum = 0
-    window_name = 'Face Capturing - Wait & Look at Camera'
-    
-    while True:
-        ret, frame = cam.read()
-        if not ret:
-            print("Failed to grab frame")
-            break
-            
-        # MTCNN works with RGB images
-        img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(img_rgb)
-        
-        boxes, probs = mtcnn.detect(pil_img)
-        
-        if boxes is not None:
-            # For enrollment, focus on the largest detected face (presumably the student)
-            best_box_idx = 0
-            if len(boxes) > 1:
-                areas = [(b[2]-b[0]) * (b[3]-b[1]) for b in boxes]
-                best_box_idx = np.argmax(areas)
-                
-            box = boxes[best_box_idx]
-            x1, y1, x2, y2 = [int(b) for b in box]
-            
-            # Make sure bounds are within frame
-            h_f, w_f = frame.shape[:2]
-            x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(w_f, x2), min(h_f, y2)
-            
-            if x2 > x1 and y2 > y1:
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                face_img = frame[y1:y2, x1:x2]
-                
-                if face_img.size > 0:
-                    sampleNum += 1
-                    filename = f"TrainingImage/{name}.{enrollment_id}.{sampleNum}.jpg"
-                    cv2.imwrite(filename, face_img)
-                
-        cv2.imshow(window_name, frame)
-        
-        # Give the window a moment to initialize on first display
-        if sampleNum == 0:
-            cv2.waitKey(1)
-
-        # Check if window is still open
-        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
-            break
-            
-        if cv2.waitKey(100) & 0xFF == ord('q'):
-            break
-        elif sampleNum >= 20:
-            break
-            
-    cam.release()
-    cv2.destroyAllWindows()
-    
-    # Save augmented images to disk physically
-    saving_trans = transforms.Compose([
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomRotation(15),
-        transforms.ColorJitter(brightness=0.4, contrast=0.4),
-        transforms.RandomAffine(degrees=0, scale=(0.8, 1.2)),
-    ])
-    for idx in range(1, sampleNum + 1):
-        filepath = f"TrainingImage/{name}.{enrollment_id}.{idx}.jpg"
-        if os.path.exists(filepath):
-            pil_img = Image.open(filepath).convert('RGB')
-            # Apply exactly one random augmentation sequence and overwrite
-            aug_img = saving_trans(pil_img)
-            aug_img.save(filepath)
-    
-    row = [enroll_id_int, name]
-    df_path = "StudentDetails/StudentDetails.csv"
-    if not os.path.exists(df_path):
-        df = pd.DataFrame(columns=['Id', 'Name'])
-        df.to_csv(df_path, index=False)
-        
-    df = pd.read_csv(df_path)
-    df = df.dropna(subset=['Id'])
-    # Ensure ID is treated as integer column
-    df['Id'] = df['Id'].astype(int)
-    
-    if enroll_id_int not in df['Id'].values:
-        new_row = pd.DataFrame([row], columns=['Id', 'Name'])
-        df = pd.concat([df, new_row], ignore_index=True)
-        df.to_csv(df_path, index=False)
-    
-    return f"Success: Captured exactly {sampleNum} base images, fully augmented."
-
+# ─────────────────────────────────────────────
+# TRAINING
+# ─────────────────────────────────────────────
 def train_images():
     ensure_folders()
     path = "TrainingImage"
-    imagePaths = [os.path.join(path, f) for f in os.listdir(path) if f.endswith('.jpg')]
-    
-    if not imagePaths:
-        return "No images found for training."
-        
-    # Load InceptionResnetV1 locally evaluated state
-    resnet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
-    
-    trans = transforms.Compose([
-        transforms.Resize((160, 160)),
-        transforms.ToTensor()
-    ])
-    
+    image_files = [f for f in os.listdir(path) if f.lower().endswith('.jpg')]
+
+    if not image_files:
+        return "No images found. Please enroll students first."
+
+    _, resnet = get_models()
+
     embeddings = []
     ids = []
-    
-    for imagePath in imagePaths:
+    skipped = 0
+
+    for fname in image_files:
         try:
-            filename = os.path.split(imagePath)[-1]
-            Id = int(filename.split('.')[1])
-            
-            img = Image.open(imagePath).convert('RGB')
-            img_tensor = trans(img).unsqueeze(0).to(device)
-            # 🌟 Standardize input for FaceNet
-            img_tensor = (img_tensor - 127.5) / 128.0
-            
-            with torch.no_grad():
-                emb = resnet(img_tensor).cpu().numpy()[0]
-                # 🌟 L2 Normalize to unit length for hyper-sphere comparison
-                emb = emb / (np.linalg.norm(emb) + 1e-6)
-                
+            # Filename format: Name.ID.SampleNum.jpg
+            parts = fname.split('.')
+            student_id = int(parts[1])
+            img = Image.open(os.path.join(path, fname))
+            emb = get_embedding(resnet, img)
             embeddings.append(emb)
-            ids.append(Id)
-                
+            ids.append(student_id)
         except Exception as e:
-            print(f"Error processing {imagePath}: {e}")
-            continue
-            
-    # Save the embeddings array to disk
-    model_data = {"embeddings": np.array(embeddings), "ids": np.array(ids)}
+            print(f"Skipped {fname}: {e}")
+            skipped += 1
+
+    if not embeddings:
+        return "Error: Could not process any images. Check image file names."
+
+    embeddings = np.array(embeddings)
+    ids = np.array(ids)
+
+    # Build per-student PROTOTYPE (mean embedding) for fast, accurate inference
+    unique_ids = np.unique(ids)
+    prototypes = {}
+    for uid in unique_ids:
+        mask = ids == uid
+        mean_emb = np.mean(embeddings[mask], axis=0)
+        mean_emb = mean_emb / (np.linalg.norm(mean_emb) + 1e-10)  # re-normalize
+        prototypes[uid] = mean_emb
+
+    model_data = {
+        "embeddings": embeddings,
+        "ids": ids,
+        "prototypes": prototypes,   # ← NEW: used for recognition
+    }
+
+    global _trained_data
+    _trained_data = None  # Force cache reload next time
+
     with open("TrainingImageLabel/Trainer.pkl", 'wb') as f:
         pickle.dump(model_data, f)
-        
-    return f"Model Trained Successfully with High-Accuracy Logic ({len(imagePaths)} images)."
 
-from PIL import ImageDraw, ImageFont
+    return (f"✅ Model trained on {len(embeddings)} images ({len(unique_ids)} students). "
+            f"Ready for attendance! ({skipped} images skipped)")
 
+# ─────────────────────────────────────────────
+# RECOGNITION (Web — snapshot)
+# ─────────────────────────────────────────────
 def recognize_face(image):
-    """Recognize a face from a single image and return an annotated image (Optimized)."""
+    """Recognize face(s) from a snapshot image. Returns (status, label, annotated_image)."""
     ensure_folders()
     model_data = get_trained_data()
     if model_data is None:
-        return "Error", "Model not found. Please train images first.", image
-        
-    saved_embeddings = model_data["embeddings"]
-    saved_ids = model_data["ids"]
-        
+        return "Error", "Model not found. Please run Train Model first.", image
+
+    prototypes = model_data.get("prototypes")
+    if prototypes is None:
+        # Fallback: build prototypes from raw embeddings (old pkl format)
+        saved_embeddings = model_data["embeddings"]
+        saved_ids = model_data["ids"]
+        prototypes = {}
+        for uid in np.unique(saved_ids):
+            mask = saved_ids == uid
+            mean_emb = np.mean(saved_embeddings[mask], axis=0)
+            prototypes[uid] = mean_emb / (np.linalg.norm(mean_emb) + 1e-10)
+
     df_path = "StudentDetails/StudentDetails.csv"
     if not os.path.exists(df_path):
         return "Error", "Student details not found.", image
     df = pd.read_csv(df_path)
-    df = df.dropna(subset=['Id'])
-    df['Id'] = df['Id'].astype(int)
-    
-    # Use cached models
+    df['Id'] = df['Id'].astype(str)
+
     mtcnn, resnet = get_models()
-    
-    # Generate annotated image
     img_rgb = image.convert('RGB')
     draw = ImageDraw.Draw(img_rgb)
     boxes, probs = mtcnn.detect(img_rgb)
-    
+
     if boxes is None:
         return "No Face", "No face detected in the image.", img_rgb
-        
+
     results_list = []
-    trans = transforms.Compose([
-        transforms.Resize((160, 160)),
-        transforms.ToTensor()
-    ])
-    
+
     for box in boxes:
         x1, y1, x2, y2 = [int(b) for b in box]
-        draw.rectangle([x1, y1, x2, y2], outline="blue", width=5)
-        
+        draw.rectangle([x1, y1, x2, y2], outline="blue", width=4)
+
         try:
-            # 🌟 SYNC PADDING: Match enrollment 10% padding for better math
+            # Pad crop same way as enrollment (15%)
             w, h = x2 - x1, y2 - y1
-            cx1 = max(0, x1 - int(w*0.1))
-            cy1 = max(0, y1 - int(h*0.1))
-            cx2 = min(img_rgb.width, x2 + int(w*0.1))
-            cy2 = min(img_rgb.height, y2 + int(h*0.1))
-            
+            pad = 0.15
+            cx1 = max(0, x1 - int(w * pad))
+            cy1 = max(0, y1 - int(h * pad))
+            cx2 = min(img_rgb.width,  x2 + int(w * pad))
+            cy2 = min(img_rgb.height, y2 + int(h * pad))
             face_crop = img_rgb.crop((cx1, cy1, cx2, cy2))
-            img_tensor = trans(face_crop).unsqueeze(0).to(device)
-            # Standardize
-            img_tensor = (img_tensor - 127.5) / 128.0
-            
-            with torch.no_grad():
-                emb = resnet(img_tensor).cpu().numpy()[0]
-                # L2 Normalize
-                emb = emb / (np.linalg.norm(emb) + 1e-6)
-            
-            # 🌟 HIGH-PRECISION VOTING: Find Top-3 neighbors (Majority Vote)
-            dists = np.linalg.norm(saved_embeddings - emb, axis=1)
-            # Find indices of the 3 smallest distances
-            top3_indices = np.argsort(dists)[:3]
-            top3_ids = saved_ids[top3_indices]
-            top3_dists = dists[top3_indices]
-            
-            # Count occurrences in Top-3
-            from collections import Counter
-            counts = Counter(top3_ids)
-            best_id, vote_count = counts.most_common(1)[0]
-            
-            # Calculate the average distance of the winners
-            winner_dists = [top3_dists[i] for i, v in enumerate(top3_ids) if v == best_id]
-            avg_winner_dist = np.mean(winner_dists)
-            
-            # 🌟 TRI-CRITERIA MATCH: 
-            # 1. Majority vote (at least 2/3)
-            # 2. Winning average distance < 0.92
-            # 3. Best overall distance < 1.0 (failsafe)
-            if vote_count >= 2 and avg_winner_dist < 0.92:
-                name_row = df.loc[df['Id'] == best_id]['Name'].values
+
+            emb = get_embedding(resnet, face_crop)
+
+            # Compare against each student's PROTOTYPE embedding
+            best_id = None
+            best_dist = float('inf')
+            for uid, proto in prototypes.items():
+                dist = np.linalg.norm(emb - proto)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_id = uid
+
+            # Threshold: 0.9 works well for L2-norm unit embeddings
+            # Lower = stricter. 0.9 is generous enough for real-world lighting variance.
+            THRESHOLD = 0.9
+            if best_dist < THRESHOLD:
+                name_row = df.loc[df['Id'] == str(best_id)]['Name'].values
                 name = name_row[0] if len(name_row) > 0 else "Unknown"
-                display_text = f"{best_id}-{name}"
-                draw.text((x1, y1 - 40), display_text, fill="lime")
-                results_list.append(display_text)
+                label = f"{best_id}-{name}"
+                draw.text((x1, max(0, y1 - 35)), label, fill="lime")
+                results_list.append(label)
             else:
-                draw.text((x1, y1 - 40), "Unknown", fill="red")
+                draw.text((x1, max(0, y1 - 35)), "Unknown", fill="red")
+
         except Exception as e:
-            print(f"Recognition Logic Error: {e}")
+            print(f"Recognition error: {e}")
             continue
-            
+
     final_status = "Recognized" if results_list else "No Match"
     return final_status, ", ".join(results_list), img_rgb
 
+# ─────────────────────────────────────────────
+# ATTENDANCE LOGGING
+# ─────────────────────────────────────────────
 def log_attendance(display_text):
-    """Safely log attendance to CSV (ID-Name format)."""
+    """Log attendance for a recognized student (format: 'ID-Name')."""
     try:
-        parts = display_text.split("-")
-        if len(parts) < 2: return
-        Id = int(parts[0])
-        name = parts[1]
-        
-        # Correct timing to IST (GMT+5:30)
-        ist_now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
+        parts = display_text.split("-", 1)
+        if len(parts) < 2:
+            return False
+        student_id = parts[0].strip()
+        name = parts[1].strip()
+
+        ist_now = datetime.datetime.now(
+            datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
         date = ist_now.strftime('%Y-%m-%d')
-        timeStamp = ist_now.strftime('%H:%M:%S')
-        
-        attendance_row = [Id, name, date, timeStamp]
+        timestamp = ist_now.strftime('%H:%M:%S')
+
         ensure_folders()
-        fileName = "Attendance/Master_Attendance.csv"
-        
-        # Append to master log
-        df = pd.DataFrame([attendance_row], columns=['Id', 'Name', 'Date', 'Time'])
-        if os.path.exists(fileName):
-            df.to_csv(fileName, mode='a', header=False, index=False)
+        fname = "Attendance/Master_Attendance.csv"
+        row = pd.DataFrame([[student_id, name, date, timestamp]],
+                           columns=['Id', 'Name', 'Date', 'Time'])
+        if os.path.exists(fname):
+            row.to_csv(fname, mode='a', header=False, index=False)
         else:
-            df.to_csv(fileName, mode='w', header=True, index=False)
+            row.to_csv(fname, mode='w', header=True, index=False)
         return True
     except Exception as e:
         print(f"Logging error: {e}")
         return False
 
-def automatic_attendance():
+
+# ─────────────────────────────────────────────
+# LEGACY desktop mode (kept for reference)
+# ─────────────────────────────────────────────
+def capture_images(enrollment_id, name):
     ensure_folders()
     try:
-        with open("TrainingImageLabel/Trainer.pkl", 'rb') as f:
-            model_data = pickle.load(f)
-        saved_embeddings = model_data["embeddings"]
-        saved_ids = model_data["ids"]
-    except FileNotFoundError:
-        return "Model not found. Please train images first."
-        
-    df_path = "StudentDetails/StudentDetails.csv"
-    if not os.path.exists(df_path):
-        return "Student details not found."
-    df = pd.read_csv(df_path)
-    df = df.dropna(subset=['Id'])
-    df['Id'] = df['Id'].astype(int)
-    
-    mtcnn = MTCNN(keep_all=True, device=device)
-    resnet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
-    
-    cam = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        int(enrollment_id)
+    except ValueError:
+        return "Error: Enrollment ID must be numeric."
+
+    mtcnn_single = MTCNN(keep_all=False, device=device)
+    cam = cv2.VideoCapture(0)
     if not cam.isOpened():
-        return "Error: Could not open camera. Please check if it is connected or in use."
+        return "Error: Could not open camera."
 
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    
-    col_names = ['Id', 'Name', 'Date', 'Time']
-    attendance = pd.DataFrame(columns=col_names)
-    
-    trans = transforms.Compose([
-        transforms.Resize((160, 160)),
-        transforms.ToTensor()
-    ])
-
-    first_frame = True
-    
+    sampleNum = 0
+    wname = 'Face Capturing (press Q to stop)'
     while True:
         ret, frame = cam.read()
         if not ret:
             break
-            
         img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(img_rgb)
-        
-        boxes, probs = mtcnn.detect(pil_img)
-        
+        boxes, _ = mtcnn_single.detect(pil_img)
         if boxes is not None:
-            for i, box in enumerate(boxes):
+            x1, y1, x2, y2 = [int(b) for b in boxes[0]]
+            h_f, w_f = frame.shape[:2]
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(w_f, x2), min(h_f, y2)
+            if x2 > x1 and y2 > y1:
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                face_img = frame[y1:y2, x1:x2]
+                if face_img.size > 0:
+                    sampleNum += 1
+                    cv2.imwrite(f"TrainingImage/{name}.{enrollment_id}.{sampleNum}.jpg", face_img)
+        cv2.imshow(wname, frame)
+        if cv2.waitKey(100) & 0xFF == ord('q') or sampleNum >= 20:
+            break
+        if cv2.getWindowProperty(wname, cv2.WND_PROP_VISIBLE) < 1:
+            break
+    cam.release()
+    cv2.destroyAllWindows()
+    return f"Captured {sampleNum} images for {name}."
+
+
+def automatic_attendance():
+    ensure_folders()
+    model_data = get_trained_data()
+    if model_data is None:
+        return "Model not found. Please train images first."
+
+    prototypes = model_data.get("prototypes")
+    if prototypes is None:
+        saved_embeddings = model_data["embeddings"]
+        saved_ids = model_data["ids"]
+        prototypes = {}
+        for uid in np.unique(saved_ids):
+            mask = saved_ids == uid
+            mean_emb = np.mean(saved_embeddings[mask], axis=0)
+            prototypes[uid] = mean_emb / (np.linalg.norm(mean_emb) + 1e-10)
+
+    df_path = "StudentDetails/StudentDetails.csv"
+    if not os.path.exists(df_path):
+        return "Student details not found."
+    df = pd.read_csv(df_path)
+    df['Id'] = df['Id'].astype(str)
+
+    _, resnet = get_models()
+    mtcnn_live = MTCNN(keep_all=True, device=device)
+    cam = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    if not cam.isOpened():
+        return "Error: Could not open camera."
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    attendance = pd.DataFrame(columns=['Id', 'Name', 'Date', 'Time'])
+    THRESHOLD = 0.9
+
+    trans = transforms.Compose([
+        transforms.Resize((160, 160)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+    ])
+
+    first_frame = True
+    wname = 'Taking Attendance (Press Q to finish)'
+
+    while True:
+        ret, frame = cam.read()
+        if not ret:
+            break
+
+        img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(img_rgb)
+        boxes, _ = mtcnn_live.detect(pil_img)
+
+        if boxes is not None:
+            for box in boxes:
                 x1, y1, x2, y2 = [int(b) for b in box]
-                
                 h_f, w_f = frame.shape[:2]
                 x1, y1 = max(0, x1), max(0, y1)
                 x2, y2 = min(w_f, x2), min(h_f, y2)
-                
                 if x2 <= x1 or y2 <= y1:
                     continue
-                
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                
-                # Crop and format for ResNet
                 try:
                     face_crop = pil_img.crop((x1, y1, x2, y2))
-                    img_tensor = trans(face_crop).unsqueeze(0).to(device)
-                    
+                    tensor = trans(face_crop.convert('RGB')).unsqueeze(0).to(device)
                     with torch.no_grad():
-                        emb = resnet(img_tensor).cpu().numpy()[0]
-                    
-                    # Compute L2 Euclidean distances
-                    dists = np.linalg.norm(saved_embeddings - emb, axis=1)
-                    min_dist_idx = np.argmin(dists)
-                    min_dist = dists[min_dist_idx]
-                    
-                    # Distance < 1.2 is safer for FaceNet, especially with augmented data
-                    if min_dist < 1.2:
-                        Id = saved_ids[min_dist_idx]
-                        ts = time.time()
-                        date = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
-                        timeStamp = datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')
-                        
-                        name_row = df.loc[df['Id'] == Id]['Name'].values
+                        emb = resnet(tensor).cpu().numpy()[0]
+                    emb = emb / (np.linalg.norm(emb) + 1e-10)
+
+                    best_id, best_dist = None, float('inf')
+                    for uid, proto in prototypes.items():
+                        d = np.linalg.norm(emb - proto)
+                        if d < best_dist:
+                            best_dist, best_id = d, uid
+
+                    if best_dist < THRESHOLD:
+                        name_row = df.loc[df['Id'] == str(best_id)]['Name'].values
                         name = name_row[0] if len(name_row) > 0 else "Unknown"
-                        
-                        tt = f"{Id}-{name}"
-                        attendance.loc[len(attendance)] = [Id, name, date, timeStamp]
+                        label = f"{best_id}-{name}"
                         color = (0, 255, 0)
+                        ist = datetime.datetime.now(
+                            datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
+                        attendance.loc[len(attendance)] = [
+                            str(best_id), name,
+                            ist.strftime('%Y-%m-%d'), ist.strftime('%H:%M:%S')]
                     else:
-                        Id = 'Unknown'
-                        tt = str(Id)
+                        label = "Unknown"
                         color = (0, 0, 255)
-                        
-                    cv2.putText(frame, str(tt), (x1, y1 - 10), font, 1, color, 2)
-                    
+                    cv2.putText(frame, label, (x1, max(0, y1 - 10)), font, 0.8, color, 2)
                 except Exception as e:
                     print(e)
-                    continue
 
-        window_name = 'Taking Attendance (Press Q to finish)'
-        cv2.imshow(window_name, frame)
-        
-        # To avoid OpenCV window bug closing instantly on the first frame
+        cv2.imshow(wname, frame)
         if first_frame:
             cv2.waitKey(1)
             first_frame = False
-            
         key = cv2.waitKey(100) & 0xFF
-        if key == ord('q') or key == ord('Q') or key == 27:
+        if key in (ord('q'), ord('Q'), 27):
+            break
+        if cv2.getWindowProperty(wname, cv2.WND_PROP_VISIBLE) < 1:
             break
 
-        # Check if window is still open
-        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
-            break
-            
-    attendance = attendance.drop_duplicates(subset=['Id'], keep='first')
-    attendance = attendance[attendance['Id'] != 'Unknown']
-    
-    if len(attendance) > 0:
-        # Create a new session folder
-        ts_folder = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        dir_path = os.path.join("Attendance", f"Session_{ts_folder}")
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
-            
-        fileName = os.path.join(dir_path, "Attendance_Report.csv")
-        attendance.to_csv(fileName, mode='w', header=True, index=False)
-        
-        # Also append to a master log for convenience
-        master_file = "Attendance/Master_Attendance.csv"
-        if os.path.exists(master_file):
-            attendance.to_csv(master_file, mode='a', header=False, index=False)
-        else:
-            attendance.to_csv(master_file, mode='w', header=True, index=False)
-            
-        msg = f"Attendance saved to {fileName}"
-    else:
-         msg = "No recognized faces to mark attendance."
-         
     cam.release()
     cv2.destroyAllWindows()
-    return msg
+
+    attendance = attendance.drop_duplicates(subset=['Id'], keep='first')
+    attendance = attendance[attendance['Id'] != 'Unknown']
+
+    if len(attendance) > 0:
+        master = "Attendance/Master_Attendance.csv"
+        if os.path.exists(master):
+            attendance.to_csv(master, mode='a', header=False, index=False)
+        else:
+            attendance.to_csv(master, mode='w', header=True, index=False)
+        return f"Attendance marked for {len(attendance)} student(s)."
+    else:
+        return "No recognized faces to mark attendance."
