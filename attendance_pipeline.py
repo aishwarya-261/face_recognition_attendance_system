@@ -109,19 +109,64 @@ def enroll_from_image(enrollment_id, name, image, sample_num=None):
     y2 = min(pil_img.height, y2 + int(h * pad))
     face_crop = pil_img.crop((x1, y1, x2, y2)).resize((160, 160), Image.LANCZOS)
 
-    # Augmentation transforms
-    aug = transforms.Compose([
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.1),
-        transforms.RandomAffine(degrees=0, scale=(0.85, 1.15), translate=(0.05, 0.05)),
-        transforms.Resize((160, 160)),
-    ])
+    # ── Deterministic 20-sample augmentation ──────────────────────────
+    # Each group of 4 applies a guaranteed distinct effect so the gallery
+    # clearly shows: Original, Flip, Bright, Dark, Zoom-In, Zoom-Out
+    # (5 rounds × 4 variants = 20 images)
+    def make_augmented_samples(base_img, total=20):
+        import random
+        from PIL import ImageEnhance
+        samples = []
+
+        for i in range(total):
+            img = base_img.copy()
+            slot = i % 5  # 0=original, 1=flip, 2=brighten, 3=darken, 4=zoom
+
+            if slot == 0:
+                # Original with tiny random translate
+                tx = random.randint(-5, 5)
+                ty = random.randint(-5, 5)
+                tmp = transforms.RandomAffine(degrees=0, translate=(0.03, 0.03))(img)
+                img = tmp
+
+            elif slot == 1:
+                # Horizontal flip (always applies)
+                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+
+            elif slot == 2:
+                # Brighten (+40-60%)
+                factor = random.uniform(1.4, 1.6)
+                img = ImageEnhance.Brightness(img).enhance(factor)
+                img = ImageEnhance.Contrast(img).enhance(random.uniform(1.1, 1.3))
+
+            elif slot == 3:
+                # Darken (50-70% brightness)
+                factor = random.uniform(0.5, 0.7)
+                img = ImageEnhance.Brightness(img).enhance(factor)
+                img = ImageEnhance.Contrast(img).enhance(random.uniform(0.9, 1.1))
+
+            elif slot == 4:
+                # Zoom in (scale 1.15–1.25) — crop center
+                scale = random.uniform(1.15, 1.25)
+                new_w = int(160 * scale)
+                new_h = int(160 * scale)
+                img_big = img.resize((new_w, new_h), Image.LANCZOS)
+                left = (new_w - 160) // 2
+                top = (new_h - 160) // 2
+                img = img_big.crop((left, top, left + 160, top + 160))
+
+            # Always resize to final 160×160
+            img = img.resize((160, 160), Image.LANCZOS)
+            samples.append(img)
+
+        return samples
+
+    aug_samples = make_augmented_samples(face_crop, total=20)
 
     saved = 0
-    for i in range(1, 21):
+    for i, out in enumerate(aug_samples, start=1):
         try:
             fname = f"TrainingImage/{name}.{enrollment_id}.{i}.jpg"
-            out = aug(face_crop) if i > 1 else face_crop
             out.save(fname, "JPEG", quality=95)
             saved += 1
         except Exception as e:
